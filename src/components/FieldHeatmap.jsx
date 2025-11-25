@@ -37,7 +37,19 @@ export default function FieldHeatmap({ points = [], onSelect, selectedPosition, 
           <div className="absolute left-0 right-0 top-2/3 h-px bg-neutral-900" />
         </div>
 
-        {/* Korf iets boven het midden (realistischer paalpositie) */}
+        {/* Korf + korfzone (extra cirkel) iets boven het midden */}
+        {/* Korfzone-ring */}
+        <div
+          className="absolute rounded-full border border-[#FF6124]/60 bg-[#FF6124]/5"
+          style={{
+            width: "16%",   // iets smaller
+            height: "30%",  // nog wat hoger
+            left: "50%",
+            top: "38%",     // ring iets verder naar beneden
+            transform: "translate(-50%, -50%)",
+          }}
+        />
+        {/* Korf zelf */}
         <div
           className="absolute w-8 h-8 rounded-full border-2 border-[#FF6124] bg-black/60"
           style={{

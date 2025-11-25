@@ -38,38 +38,55 @@ export default function Dashboard() {
 
   // Voorkeurs-team (voor gefilterde view). Als leeg: club-brede cijfers.
   const [preferredTeamId, setPreferredTeamId] = useState("");
+  const [userClubId, setUserClubId] = useState("");
 
   useEffect(() => {
     if (!currentUser) {
       setPreferredTeamId("");
+      setUserClubId("");
       return;
     }
 
     let cancelled = false;
 
-    async function loadPreferredTeam() {
+    async function loadUserProfile() {
       try {
         const ref = doc(db, "users", currentUser.uid);
         const snap = await getDoc(ref);
         if (!cancelled && snap.exists()) {
           const data = snap.data() || {};
           setPreferredTeamId(data.preferredTeamId || "");
+          setUserClubId(data.clubId || "");
         }
       } catch (e) {
-        console.error("[Dashboard] Fout bij laden voorkeurs-team:", e);
-        if (!cancelled) setPreferredTeamId("");
+        console.error("[Dashboard] Fout bij laden gebruikersprofiel:", e);
+        if (!cancelled) {
+          setPreferredTeamId("");
+          setUserClubId("");
+        }
       }
     }
 
-    loadPreferredTeam();
+    loadUserProfile();
     return () => {
       cancelled = true;
     };
   }, [currentUser]);
 
+  // Basis-filter: beperk matches/clips tot clubId (indien bekend)
+  const matchesForClub = useMemo(() => {
+    if (!userClubId) return matches;
+    return matches.filter((m) => !m.clubId || m.clubId === userClubId);
+  }, [matches, userClubId]);
+
+  const clipsForClub = useMemo(() => {
+    if (!userClubId) return clips;
+    return clips.filter((c) => !c.clubId || c.clubId === userClubId);
+  }, [clips, userClubId]);
+
   // Clips zonder sequenties, optioneel gefilterd op voorkeurs-team
   const baseClips = useMemo(() => {
-    const nonSeq = clips.filter((c) => !c.sequenceId);
+    const nonSeq = clipsForClub.filter((c) => !c.sequenceId);
 
     if (!preferredTeamId) return nonSeq;
 
@@ -79,17 +96,17 @@ export default function Dashboard() {
 
     const idSet = new Set(matchIds);
     return nonSeq.filter((c) => idSet.has(c.matchId));
-  }, [clips, matches, preferredTeamId]);
+  }, [clipsForClub, matchesForClub, preferredTeamId]);
 
   // --- KPI’S ---
   const totalTeams = teams.length;
 
   const matchesForView = useMemo(() => {
-    if (!preferredTeamId) return matches;
-    return matches.filter(
+    if (!preferredTeamId) return matchesForClub;
+    return matchesForClub.filter(
       (m) => m.homeTeamId === preferredTeamId || m.awayTeamId === preferredTeamId
     );
-  }, [matches, preferredTeamId]);
+  }, [matchesForClub, preferredTeamId]);
 
   const totalMatches = matchesForView.length;
   const totalClips = baseClips.length;
@@ -103,7 +120,7 @@ export default function Dashboard() {
       preferredTeamId ? [preferredTeamId] : teams.map((t) => t.id)
     );
 
-    matches.forEach((m) => {
+    matchesForClub.forEach((m) => {
       const homeScore = Number(m.homeScore || 0);
       const awayScore = Number(m.awayScore || 0);
 
@@ -122,7 +139,7 @@ export default function Dashboard() {
       }
     });
     return { gf, ga };
-  }, [matches, teams, preferredTeamId]);
+  }, [matchesForClub, teams, preferredTeamId]);
 
   // FG% (schotefficiency)
   const fg = useMemo(() => {
@@ -175,14 +192,14 @@ export default function Dashboard() {
 
   // Speler van de week: beste schutter in de meest recente wedstrijd op basis van FG%
   const playerOfTheWeek = useMemo(() => {
-    if (!matches.length || !baseClips.length || !teams.length) return null;
+    if (!matchesForClub.length || !baseClips.length || !teams.length) return null;
 
     // Filter wedstrijden op voorkeurs-team indien ingesteld
     const matchPool = preferredTeamId
-      ? matches.filter(
+      ? matchesForClub.filter(
           (m) => m.homeTeamId === preferredTeamId || m.awayTeamId === preferredTeamId
         )
-      : matches;
+      : matchesForClub;
 
     const sorted = [...matchPool]
       .filter((m) => m.date)
@@ -259,7 +276,7 @@ export default function Dashboard() {
       fg: Math.round(best.fg),
       match: latest,
     };
-  }, [matches, baseClips, teams, preferredTeamId]);
+  }, [matchesForClub, baseClips, teams, preferredTeamId]);
 
   return (
     <div className="space-y-8">

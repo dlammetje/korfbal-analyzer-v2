@@ -4,6 +4,8 @@ import { useParams, useNavigate } from "react-router-dom";
 import { Play, Pause, Upload, ChevronLeft, ChevronRight, Trash2, Star } from "lucide-react";
 import { useAppData } from "../context/AppDataContext";
 import { useAuth } from "../context/AuthContext";
+import { db } from "../lib/firebaseClient";
+import { doc, getDoc } from "firebase/firestore";
 import FieldHeatmap from "../components/FieldHeatmap";
 
 const ZONES = [
@@ -49,6 +51,8 @@ export default function MatchDetail() {
   const { matchId } = useParams();
   const navigate = useNavigate();
   const { currentUser } = useAuth();
+
+  const [userClubId, setUserClubId] = useState("");
 
   const [uploadStatus, setUploadStatus] = useState({ half1: null, half2: null });
   const [uploadError, setUploadError] = useState({ half1: null, half2: null });
@@ -116,6 +120,39 @@ export default function MatchDetail() {
   const [clipPlayerFilter, setClipPlayerFilter] = useState("");
   const [clipFavoritesOnly, setClipFavoritesOnly] = useState(false);
   const [clipActionFilter, setClipActionFilter] = useState("");
+
+  // Laad clubId van de ingelogde gebruiker zodat nieuwe clips aan een club gekoppeld kunnen worden
+  useEffect(() => {
+    if (!currentUser) {
+      setUserClubId("");
+      return;
+    }
+
+    let cancelled = false;
+
+    async function loadUserClub() {
+      try {
+        const ref = doc(db, "users", currentUser.uid);
+        const snap = await getDoc(ref);
+        if (!cancelled && snap.exists()) {
+          const data = snap.data() || {};
+          if (data.clubId) {
+            setUserClubId(data.clubId);
+          } else {
+            setUserClubId("");
+          }
+        }
+      } catch (e) {
+        console.error("[MatchDetail] Fout bij laden clubId:", e);
+        setUserClubId("");
+      }
+    }
+
+    loadUserClub();
+    return () => {
+      cancelled = true;
+    };
+  }, [currentUser]);
 
   // players voor deze match (basisspelers + wissels)
   const matchPlayers = useMemo(() => {
@@ -437,6 +474,7 @@ export default function MatchDetail() {
       sequenceId: activeSequenceId || null,
       x: fieldPosition && typeof fieldPosition.x === "number" ? fieldPosition.x : null,
       y: fieldPosition && typeof fieldPosition.y === "number" ? fieldPosition.y : null,
+      clubId: userClubId || null,
     };
 
     // Voor tegenstander-acties willen we ook altijd de Raak/Mis-popup tonen
@@ -772,8 +810,8 @@ export default function MatchDetail() {
               </div>
             </div>
 
-            <div className="max-h-[360px] overflow-y-auto">
-              <table className="w-full text-sm">
+            <div className="max-h-[360px] overflow-y-auto overflow-x-auto">
+              <table className="w-full min-w-max text-sm">
                 <thead className="bg-neutral-950 text-neutral-400 uppercase text-xs">
                   <tr>
                     <th className="px-4 py-2 text-left">Tijd</th>

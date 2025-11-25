@@ -1,6 +1,9 @@
-import React, { useMemo, useRef, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useAppData } from "../context/AppDataContext";
 import FieldHeatmap from "../components/FieldHeatmap";
+import { useAuth } from "../context/AuthContext";
+import { db } from "../lib/firebaseClient";
+import { doc, getDoc } from "firebase/firestore";
 
 const ZONES = [
   "Linksvoor", "Voor (midden)", "Rechtsvoor",
@@ -16,6 +19,9 @@ function fmt(t) {
 
 export default function Statistics() {
   const { teams = [], matches = [], clips = [], clipSequences = [] } = useAppData() || {};
+  const { currentUser } = useAuth();
+
+  const [userClubId, setUserClubId] = useState("");
 
   const [selectedTeam, setSelectedTeam] = useState("all");
   const [selectedPlayer, setSelectedPlayer] = useState("all");
@@ -35,10 +41,49 @@ export default function Statistics() {
   const [mapAction, setMapAction] = useState("all");
   const [mapResult, setMapResult] = useState("all");
 
+  // Laad clubId van de ingelogde gebruiker zodat statistieken per club gefilterd kunnen worden
+  useEffect(() => {
+    if (!currentUser) {
+      setUserClubId("");
+      return;
+    }
+
+    let cancelled = false;
+
+    async function loadUserClub() {
+      try {
+        const ref = doc(db, "users", currentUser.uid);
+        const snap = await getDoc(ref);
+        if (!cancelled && snap.exists()) {
+          const data = snap.data() || {};
+          setUserClubId(data.clubId || "");
+        }
+      } catch (e) {
+        console.error("[Statistics] Fout bij laden clubId:", e);
+        setUserClubId("");
+      }
+    }
+
+    loadUserClub();
+    return () => {
+      cancelled = true;
+    };
+  }, [currentUser]);
+
+  const matchesForClub = useMemo(() => {
+    if (!userClubId) return matches;
+    return matches.filter((m) => !m.clubId || m.clubId === userClubId);
+  }, [matches, userClubId]);
+
+  const clipsForClub = useMemo(() => {
+    if (!userClubId) return clips;
+    return clips.filter((c) => !c.clubId || c.clubId === userClubId);
+  }, [clips, userClubId]);
+
   const enriched = useMemo(() => {
-    // Gebruik alle clips (ook met sequenceId), zodat sequentie-clips ook meetellen.
-    return clips.map(c => {
-      const match = matches.find(m => m.id === c.matchId) || {};
+    // Gebruik alle clips (ook met sequenceId), maar alleen binnen de club.
+    return clipsForClub.map(c => {
+      const match = matchesForClub.find(m => m.id === c.matchId) || {};
       const home = teams.find(t => t.id === match.homeTeamId);
       const away = teams.find(t => t.id === match.awayTeamId);
       const allTeamsWithPlayers = teams || [];
@@ -68,7 +113,7 @@ export default function Statistics() {
         matchName: `${datePart} — ${homeName} vs ${awayName}`,
       };
     });
-  }, [clips, teams, matches]);
+  }, [clipsForClub, teams, matchesForClub]);
 
   const enrichedById = useMemo(() => {
     const map = {};
@@ -356,7 +401,7 @@ export default function Statistics() {
           setter={setSelectedMatch}
           options={[
             "all",
-            ...matches.map((m) => {
+            ...matchesForClub.map((m) => {
               const home = teams.find((t) => t.id === m.homeTeamId);
               const away = teams.find((t) => t.id === m.awayTeamId);
               const datePart = m.date || "Onbekende datum";

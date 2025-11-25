@@ -103,17 +103,19 @@ export default function Matches() {
   );
 
   const [preferredTeamId, setPreferredTeamId] = useState("");
+  const [userClubId, setUserClubId] = useState("");
 
-  // Laad het voorkeurs-team van de ingelogde gebruiker uit Firestore
+  // Laad het voorkeurs-team en clubId van de ingelogde gebruiker uit Firestore
   useEffect(() => {
     if (!currentUser) {
       setPreferredTeamId("");
+      setUserClubId("");
       return;
     }
 
     let cancelled = false;
 
-    async function loadPreferredTeam() {
+    async function loadPreferredTeamAndClub() {
       try {
         const ref = doc(db, "users", currentUser.uid);
         const snap = await getDoc(ref);
@@ -124,25 +126,36 @@ export default function Matches() {
           } else {
             setPreferredTeamId("");
           }
+
+          if (data.clubId) {
+            setUserClubId(data.clubId);
+          } else {
+            setUserClubId("");
+          }
         }
       } catch (e) {
         console.error("[Matches] Fout bij laden voorkeurs-team:", e);
         setPreferredTeamId("");
+        setUserClubId("");
       }
     }
 
-    loadPreferredTeam();
+    loadPreferredTeamAndClub();
     return () => {
       cancelled = true;
     };
   }, [currentUser]);
 
   const visibleMatches = useMemo(() => {
-    if (!preferredTeamId) return matches;
-    return matches.filter(
+    const matchesForClub = userClubId
+      ? matches.filter((m) => !m.clubId || m.clubId === userClubId)
+      : matches;
+
+    if (!preferredTeamId) return matchesForClub;
+    return matchesForClub.filter(
       (m) => m.homeTeamId === preferredTeamId || m.awayTeamId === preferredTeamId
     );
-  }, [matches, preferredTeamId]);
+  }, [matches, preferredTeamId, userClubId]);
 
   const [src1, setSrc1] = useState("");
   const [src2, setSrc2] = useState("");
@@ -280,6 +293,7 @@ export default function Matches() {
       ...newMatch,
       homeScore: Number(newMatch.homeScore || 0),
       awayScore: Number(newMatch.awayScore || 0),
+      clubId: userClubId || null,
     });
 
     console.log("✅ Wedstrijd opgeslagen met ID:", id);
@@ -321,6 +335,7 @@ export default function Matches() {
       actionType: action.id,
       result: opponent ? "opp_goal" : null,
       opponentGoal: opponent,
+      clubId: userClubId || null,
     };
 
     if (action.isChance && !opponent) {

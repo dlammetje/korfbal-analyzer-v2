@@ -2,7 +2,7 @@ import React, { useEffect, useState } from "react";
 import { useAuth } from "../context/AuthContext";
 import { useAppData } from "../context/AppDataContext";
 import { db } from "../lib/firebaseClient";
-import { doc, getDoc, setDoc } from "firebase/firestore";
+import { doc, getDoc, setDoc, collection, query, where, getDocs } from "firebase/firestore";
 
 export default function Settings() {
   const { currentUser, changeEmail } = useAuth();
@@ -15,6 +15,11 @@ export default function Settings() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [status, setStatus] = useState("");
+
+  // Club-koppeling
+  const [clubCode, setClubCode] = useState("");
+  const [clubInviteCode, setClubInviteCode] = useState("");
+  const [clubStatus, setClubStatus] = useState("");
 
   const [newEmail, setNewEmail] = useState("");
   const [currentPassword, setCurrentPassword] = useState("");
@@ -49,6 +54,11 @@ export default function Settings() {
           if (data.displayName) setDisplayName(data.displayName);
           if (data.preferredTeamId) setPreferredTeamId(data.preferredTeamId);
           if (data.themeColor) setThemeColor(data.themeColor);
+
+          // Toon eventueel bestaande club-informatie in de status
+          if (data.clubId && data.clubName) {
+            setClubStatus(`Gekoppeld aan club: ${data.clubName}`);
+          }
         }
       } catch (e) {
         console.error("[Settings] Fout bij laden profiel:", e);
@@ -82,6 +92,53 @@ export default function Settings() {
       setStatus("Opslaan mislukt. Zie console voor details.");
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function handleLinkClub() {
+    if (!currentUser) return;
+    const trimmedCode = clubCode.trim();
+    const trimmedInvite = clubInviteCode.trim();
+
+    if (!trimmedCode || !trimmedInvite) {
+      setClubStatus("Vul zowel een clubcode als een uitnodigingscode in.");
+      return;
+    }
+
+    try {
+      setClubStatus("Club wordt opgezocht...");
+
+      const clubsRef = collection(db, "clubs");
+      const q = query(
+        clubsRef,
+        where("shortCode", "==", trimmedCode),
+        where("signupCode", "==", trimmedInvite),
+        where("active", "==", true)
+      );
+
+      const snap = await getDocs(q);
+
+      if (snap.empty) {
+        setClubStatus("Geen actieve club gevonden voor deze combinatie. Controleer de codes.");
+        return;
+      }
+
+      // Neem de eerste match
+      const docSnap = snap.docs[0];
+      const clubData = docSnap.data() || {};
+      const clubId = docSnap.id;
+      const clubName = clubData.name || trimmedCode;
+
+      const userRef = doc(db, "users", currentUser.uid);
+      await setDoc(userRef, {
+        clubId,
+        clubName,
+      }, { merge: true });
+
+      setClubStatus(`Gekoppeld aan club: ${clubName}`);
+    } catch (e) {
+      console.error("[Settings] Fout bij club koppelen:", e);
+      setClubStatus("Club koppelen mislukt. Probeer het later opnieuw of neem contact op met de beheerder.");
     }
   }
 
@@ -152,6 +209,41 @@ export default function Settings() {
               Als je hier bijvoorbeeld "Sparta 1" kiest, zie je op andere pagina's standaard alleen de wedstrijden van dit team.
             </p>
           </div>
+
+          <div>
+            <label className="block text-xs text-neutral-400 mb-1">Clubcode</label>
+            <input
+              type="text"
+              value={clubCode}
+              onChange={(e) => setClubCode(e.target.value)}
+              className="w-full bg-neutral-800 border border-neutral-700 rounded-xl px-3 py-2 text-sm text-white"
+              placeholder="Bijv. SPARTA"
+            />
+          </div>
+
+          <div>
+            <label className="block text-xs text-neutral-400 mb-1">Uitnodigingscode</label>
+            <input
+              type="text"
+              value={clubInviteCode}
+              onChange={(e) => setClubInviteCode(e.target.value)}
+              className="w-full bg-neutral-800 border border-neutral-700 rounded-xl px-3 py-2 text-sm text-white"
+              placeholder="Code van jouw clubbeheerder"
+            />
+          </div>
+        </div>
+
+        <div className="flex items-center gap-3">
+          <button
+            type="button"
+            onClick={handleLinkClub}
+            className="px-4 py-2 rounded-xl text-sm text-white bg-[#FF6124] disabled:opacity-60"
+          >
+            Koppel aan club
+          </button>
+          {clubStatus && (
+            <span className="text-xs text-neutral-400 max-w-md">{clubStatus}</span>
+          )}
         </div>
       </div>
 

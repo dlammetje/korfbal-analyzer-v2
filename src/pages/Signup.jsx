@@ -1,12 +1,16 @@
 import React, { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
+import { db } from "../lib/firebaseClient";
+import { collection, doc, getDocs, query, setDoc, where } from "firebase/firestore";
 
 export default function Signup() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [displayName, setDisplayName] = useState("");
+  const [clubCode, setClubCode] = useState("");
+  const [clubInviteCode, setClubInviteCode] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [verificationSent, setVerificationSent] = useState(false);
@@ -21,10 +25,65 @@ export default function Signup() {
       return setError("Wachtwoorden komen niet overeen");
     }
 
+    const trimmedClubCode = clubCode.trim();
+    const trimmedInvite = clubInviteCode.trim();
+
+    console.log("[Signup] clubCode input:", clubCode);
+    console.log("[Signup] invite input:", clubInviteCode);
+    console.log("[Signup] trimmedClubCode:", trimmedClubCode);
+    console.log("[Signup] trimmedInvite:", trimmedInvite);
+
+    if (!trimmedClubCode || !trimmedInvite) {
+      return setError("Vul zowel een clubcode als een uitnodigingscode in.");
+    }
+
     try {
       setError("");
       setLoading(true);
-      await signup(email, password, displayName);
+
+      // 1) Maak eerst het account aan (zodat Firestore-reads geauthenticeerd zijn)
+      const user = await signup(email, password, displayName);
+
+      // 2) Zoek daarna de club op basis van shortCode + signupCode + active
+      const clubsRef = collection(db, "clubs");
+      const q = query(
+        clubsRef,
+        where("shortCode", "==", trimmedClubCode),
+        where("signupCode", "==", trimmedInvite),
+        where("active", "==", true)
+      );
+
+      const snap = await getDocs(q);
+
+      console.log("[Signup] clubs query size:", snap.size);
+      snap.forEach((d) => console.log("[Signup] club doc:", d.id, d.data()));
+
+      if (!snap.empty && user && user.uid) {
+        const docSnap = snap.docs[0];
+        const clubData = docSnap.data() || {};
+        const clubId = docSnap.id;
+        const clubName = clubData.name || trimmedClubCode;
+
+        const userRef = doc(db, "users", user.uid);
+        await setDoc(
+          userRef,
+          {
+            displayName: displayName || "",
+            preferredTeamId: "",
+            themeColor: "#FF6124",
+            clubId,
+            clubName,
+          },
+          { merge: true }
+        );
+      } else if (snap.empty) {
+        // Club niet gevonden: toon nette fout. Het account bestaat dan al,
+        // maar is nog niet gekoppeld aan een club (kan via Settings worden hersteld).
+        setError("Geen actieve club gevonden voor deze combinatie. Controleer de codes.");
+        setLoading(false);
+        return;
+      }
+
       setVerificationSent(true);
       setMessage(`Verificatie-e-mail verzonden naar ${email}. Controleer je inbox.`);
     } catch (err) {
@@ -133,6 +192,38 @@ export default function Signup() {
                 placeholder="Bevestig wachtwoord"
                 value={confirmPassword}
                 onChange={(e) => setConfirmPassword(e.target.value)}
+              />
+            </div>
+
+            <div>
+              <label htmlFor="club-code" className="sr-only">
+                Clubcode
+              </label>
+              <input
+                id="club-code"
+                name="clubCode"
+                type="text"
+                required
+                className="appearance-none relative block w-full px-3 py-2 border border-neutral-800 bg-neutral-900 text-white rounded-xl focus:outline-none focus:ring-2 focus:ring-brand focus:border-brand focus:z-10 sm:text-sm"
+                placeholder="Clubcode (bijv. SPARTA)"
+                value={clubCode}
+                onChange={(e) => setClubCode(e.target.value)}
+              />
+            </div>
+
+            <div>
+              <label htmlFor="club-invite" className="sr-only">
+                Uitnodigingscode
+              </label>
+              <input
+                id="club-invite"
+                name="clubInviteCode"
+                type="text"
+                required
+                className="appearance-none relative block w-full px-3 py-2 border border-neutral-800 bg-neutral-900 text-white rounded-xl focus:outline-none focus:ring-2 focus:ring-brand focus:border-brand focus:z-10 sm:text-sm"
+                placeholder="Uitnodigingscode van jouw club"
+                value={clubInviteCode}
+                onChange={(e) => setClubInviteCode(e.target.value)}
               />
             </div>
           </div>

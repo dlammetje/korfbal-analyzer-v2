@@ -1,0 +1,48 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  /* Standaard accentkleur (oranje) */
+  --accent-color: #FF6124;
+}
+
+/* Optioneel: jouw dark-theme achtergrondkleur */
+body {
+  background-color: #000;
+  color: #fff;
+}
+
+/* Override Tailwind utility classes voor de oranje tint zodat ze de accentkleur gebruiken */
+.bg-\[\#FF6124\] {
+  background-color: var(--accent-color) !important;
+}
+
+.text-\[\#FF6124\] {
+  color: var(--accent-color) !important;
+}
+
+.border-\[\#FF6124\] {
+  border-color: var(--accent-color) !important;
+}
+
+.hover\:border-\[\#FF6124\]:hover {
+  border-color: var(--accent-color) !important;
+}
+
+.hover\:text-\[\#FF6124\]:hover {
+  color: var(--accent-color) !important;
+}
+
+/* Transparante varianten met color-mix, zodat de tint mee verandert */
+.bg-\[\#FF6124\]\/10 {
+  background-color: color-mix(in srgb, var(--accent-color) 10%, transparent) !important;
+}
+
+.bg-\[\#FF6124\]\/15 {
+  background-color: color-mix(in srgb, var(--accent-color) 15%, transparent) !important;
+}
+
+.bg-\[\#FF6124\]\/20 {
+  background-color: color-mix(in srgb, var(--accent-color) 20%, transparent) !important;
+}

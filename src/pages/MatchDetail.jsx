@@ -250,9 +250,14 @@ export default function MatchDetail() {
       return;
     }
 
+    // 1) Probeer eerst de URLs uit Firestore (match.videoUrls)
+    const urls = match.videoUrls || {};
+
+    // 2) Val terug op lokaal opgeslagen URLs (per browser/domein)
     const saved = loadMatchVideosLocally(match.id) || {};
-    setSrc1(saved.half1 || "");
-    setSrc2(saved.half2 || "");
+
+    setSrc1(urls.half1 || saved.half1 || "");
+    setSrc2(urls.half2 || saved.half2 || "");
     setCurrentHalf(1);
     setPlaying(false);
   }, [match, loadMatchVideosLocally]);

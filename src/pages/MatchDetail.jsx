@@ -814,12 +814,12 @@ export default function MatchDetail() {
                           <td className="px-4 py-2">
                             {isOpp && c.result === "opp_goal" && (
                               <span className="text-red-400 font-semibold">
-                                Tegenstander goal
+                                Raak
                               </span>
                             )}
                             {isOpp && c.result === "opp_miss" && (
                               <span className="text-red-300 font-semibold">
-                                Tegenstander mis
+                                Mis
                               </span>
                             )}
                             {c.result === "goal" && !isOpp && (

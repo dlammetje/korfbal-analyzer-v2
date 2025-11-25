@@ -423,14 +423,15 @@ export default function MatchDetail() {
 
     const base = {
       matchId: match.id,
-      playerId: opponent ? "" : playerId,
+      // Gebruik altijd de geselecteerde speler zodat we ook bij tegenstander-kansen weten bij wie het gebeurde
+      playerId: playerId,
       teamId: opponent ? "" : match.homeTeamId, // eventueel uitbreiden met verdedigingsteam
       time: now,
       half: currentHalf,
       phase: opponent ? "defense" : phase,
       zone: zoneToUse,
       actionType: action.id,
-      result: opponent ? "opp_goal" : null,
+      result: null,
       opponentGoal: opponent,
       customActionId,
       sequenceId: activeSequenceId || null,
@@ -438,7 +439,13 @@ export default function MatchDetail() {
       y: fieldPosition && typeof fieldPosition.y === "number" ? fieldPosition.y : null,
     };
 
-    if (action.isChance && !opponent) {
+    // Voor tegenstander-acties willen we ook altijd de Raak/Mis-popup tonen
+    if (opponent) {
+      setChancePrompt({ action, base });
+      return;
+    }
+
+    if (action.isChance) {
       setChancePrompt({ action, base });
       return;
     }
@@ -448,7 +455,16 @@ export default function MatchDetail() {
 
   function confirmChance(result) {
     if (!chancePrompt) return;
-    addClip({ ...chancePrompt.base, result });
+
+    const isOpp = !!chancePrompt.base.opponentGoal;
+    let finalResult = result;
+
+    if (isOpp) {
+      // Voor tegenstander-clips gebruiken we aparte result-codes
+      finalResult = result === "goal" ? "opp_goal" : "opp_miss";
+    }
+
+    addClip({ ...chancePrompt.base, result: finalResult });
     setChancePrompt(null);
   }
 
@@ -774,7 +790,7 @@ export default function MatchDetail() {
                   {filteredClips.length ? (
                     filteredClips.map((c) => {
                       const p = matchPlayers.find((x) => x.id === c.playerId);
-                      const isOpp = c.result === "opp_goal";
+                      const isOpp = !!c.opponentGoal;
 
                       return (
                         <tr
@@ -796,9 +812,14 @@ export default function MatchDetail() {
                             {c.actionType ? c.actionType.replaceAll("_", " ") : "—"}
                           </td>
                           <td className="px-4 py-2">
-                            {isOpp && (
+                            {isOpp && c.result === "opp_goal" && (
                               <span className="text-red-400 font-semibold">
                                 Tegenstander goal
+                              </span>
+                            )}
+                            {isOpp && c.result === "opp_miss" && (
+                              <span className="text-red-300 font-semibold">
+                                Tegenstander mis
                               </span>
                             )}
                             {c.result === "goal" && !isOpp && (

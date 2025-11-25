@@ -1,6 +1,9 @@
-import React, { useMemo } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAppData } from "../context/AppDataContext";
+import { useAuth } from "../context/AuthContext";
+import { db } from "../lib/firebaseClient";
+import { doc, getDoc } from "firebase/firestore";
 import { Trophy, Users, Activity, PlaySquare, BarChart2 } from "lucide-react";
 import FieldHeatmap from "../components/FieldHeatmap";
 
@@ -30,45 +33,96 @@ function formatTeamName(teamId, teams) {
 
 export default function Dashboard() {
   const { teams, matches, clips } = useAppData();
+  const { currentUser } = useAuth();
   const navigate = useNavigate();
 
-  const baseClips = useMemo(
-    () => clips.filter((c) => !c.sequenceId),
-    [clips]
-  );
+  // Voorkeurs-team (voor gefilterde view). Als leeg: club-brede cijfers.
+  const [preferredTeamId, setPreferredTeamId] = useState("");
+
+  useEffect(() => {
+    if (!currentUser) {
+      setPreferredTeamId("");
+      return;
+    }
+
+    let cancelled = false;
+
+    async function loadPreferredTeam() {
+      try {
+        const ref = doc(db, "users", currentUser.uid);
+        const snap = await getDoc(ref);
+        if (!cancelled && snap.exists()) {
+          const data = snap.data() || {};
+          setPreferredTeamId(data.preferredTeamId || "");
+        }
+      } catch (e) {
+        console.error("[Dashboard] Fout bij laden voorkeurs-team:", e);
+        if (!cancelled) setPreferredTeamId("");
+      }
+    }
+
+    loadPreferredTeam();
+    return () => {
+      cancelled = true;
+    };
+  }, [currentUser]);
+
+  // Clips zonder sequenties, optioneel gefilterd op voorkeurs-team
+  const baseClips = useMemo(() => {
+    const nonSeq = clips.filter((c) => !c.sequenceId);
+
+    if (!preferredTeamId) return nonSeq;
+
+    const matchIds = matches
+      .filter((m) => m.homeTeamId === preferredTeamId || m.awayTeamId === preferredTeamId)
+      .map((m) => m.id);
+
+    const idSet = new Set(matchIds);
+    return nonSeq.filter((c) => idSet.has(c.matchId));
+  }, [clips, matches, preferredTeamId]);
 
   // --- KPI’S ---
   const totalTeams = teams.length;
-  const totalMatches = matches.length;
+
+  const matchesForView = useMemo(() => {
+    if (!preferredTeamId) return matches;
+    return matches.filter(
+      (m) => m.homeTeamId === preferredTeamId || m.awayTeamId === preferredTeamId
+    );
+  }, [matches, preferredTeamId]);
+
+  const totalMatches = matchesForView.length;
   const totalClips = baseClips.length;
 
   // Goals for/against
   const goalStats = useMemo(() => {
-    let gf = 0, ga = 0;
-    matches.forEach(m => {
+    let gf = 0,
+      ga = 0;
+
+    const ourIds = new Set(
+      preferredTeamId ? [preferredTeamId] : teams.map((t) => t.id)
+    );
+
+    matches.forEach((m) => {
       const homeScore = Number(m.homeScore || 0);
       const awayScore = Number(m.awayScore || 0);
 
-      // We count goals from our perspective: 
-      // If we are the home team, homeScore = goals for.
-      // If we are the away team, awayScore = goals for.
+      const homeIsOurs = ourIds.has(m.homeTeamId);
+      const awayIsOurs = ourIds.has(m.awayTeamId);
 
-      // Identify "our" team: assume first team in teams list is ours.
-      const ourTeamId = teams[0]?.id;
+      // Als beide teams van ons zijn (club-onderlinge), sla deze wedstrijd over in goalsaldo
+      if (homeIsOurs && awayIsOurs) return;
 
-      const isHome = m.homeTeamId === ourTeamId;
-      const isAway = m.awayTeamId === ourTeamId;
-
-      if (isHome) {
+      if (homeIsOurs) {
         gf += homeScore;
         ga += awayScore;
-      } else if (isAway) {
+      } else if (awayIsOurs) {
         gf += awayScore;
         ga += homeScore;
       }
     });
     return { gf, ga };
-  }, [matches]);
+  }, [matches, teams, preferredTeamId]);
 
   // FG% (schotefficiency)
   const fg = useMemo(() => {
@@ -115,7 +169,7 @@ export default function Dashboard() {
   }, [baseClips]);
 
   // Recente wedstrijden
-  const recentMatches = [...matches]
+  const recentMatches = [...matchesForView]
     .sort((a, b) => new Date(b.date) - new Date(a.date))
     .slice(0, 4);
 
@@ -123,7 +177,14 @@ export default function Dashboard() {
   const playerOfTheWeek = useMemo(() => {
     if (!matches.length || !baseClips.length || !teams.length) return null;
 
-    const sorted = [...matches]
+    // Filter wedstrijden op voorkeurs-team indien ingesteld
+    const matchPool = preferredTeamId
+      ? matches.filter(
+          (m) => m.homeTeamId === preferredTeamId || m.awayTeamId === preferredTeamId
+        )
+      : matches;
+
+    const sorted = [...matchPool]
       .filter((m) => m.date)
       .sort((a, b) => new Date(b.date) - new Date(a.date));
 
@@ -144,11 +205,24 @@ export default function Dashboard() {
     const latest = latestWithShots.match;
     const matchClips = latestWithShots.clips;
 
+    // Bouw spelerslijst met team-informatie
+    const allPlayers = teams.flatMap((t) => {
+      const base = (t.players || []).map((p) => ({ ...p, teamName: t.name, teamId: t.id }));
+      const subs = (t.subs || []).map((p) => ({ ...p, teamName: t.name, teamId: t.id }));
+      return [...base, ...subs];
+    });
+
     const byPlayer = {};
 
     matchClips.forEach((c) => {
       const pid = c.playerId || "";
       if (!pid) return;
+      const player = allPlayers.find((p) => p.id === pid);
+      if (!player) return;
+
+      // Als voorkeurs-team is ingesteld: alleen spelers uit dat team
+      if (preferredTeamId && player.teamId !== preferredTeamId) return;
+
       if (!byPlayer[pid]) {
         byPlayer[pid] = { attempts: 0, goals: 0 };
       }
@@ -174,13 +248,6 @@ export default function Dashboard() {
 
     const best = entries[0];
 
-    // Zoek spelernaam en teamnaam
-    const allPlayers = teams.flatMap((t) => {
-      const base = (t.players || []).map((p) => ({ ...p, teamName: t.name }));
-      const subs = (t.subs || []).map((p) => ({ ...p, teamName: t.name }));
-      return [...base, ...subs];
-    });
-
     const player = allPlayers.find((p) => p.id === best.playerId);
     if (!player) return null;
 
@@ -192,7 +259,7 @@ export default function Dashboard() {
       fg: Math.round(best.fg),
       match: latest,
     };
-  }, [matches, baseClips, teams]);
+  }, [matches, baseClips, teams, preferredTeamId]);
 
   return (
     <div className="space-y-8">

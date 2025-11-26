@@ -30,7 +30,8 @@ const DEFENSE_ACTIONS = [
   { id: "verdedigd", label: "Verdedigd", isChance: false },
   { id: "onderschepping", label: "Onderschepping", isChance: false },
   { id: "overname", label: "Overname", isChance: false },
-  { id: "rebound_verdediging", label: "Rebound (Verdediging)", isChance: false },
+  { id: "rebound_def_win", label: "Rebound verd. (win)", isChance: false },
+  { id: "rebound_def_lose", label: "Rebound verd. (verlies)", isChance: false },
   { id: "overtreding", label: "Overtreding", isChance: false },
 ];
 

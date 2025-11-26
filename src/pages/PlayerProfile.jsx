@@ -124,7 +124,7 @@ export default function PlayerProfile() {
     const chanceGoals = chanceShots.filter((c) => c.result === "goal");
 
     const reboundsAttack = playerClips.filter((c) => c.actionType === "rebound_win").length;
-    const reboundsDefense = playerClips.filter((c) => c.actionType === "rebound_verdediging").length;
+    const reboundsDefense = playerClips.filter((c) => ["rebound_verdediging", "rebound_def_win"].includes(c.actionType)).length;
     const totalRebounds = reboundsAttack + reboundsDefense;
 
     return {

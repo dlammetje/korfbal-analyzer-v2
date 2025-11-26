@@ -156,9 +156,13 @@ export default function Statistics() {
     const chanceShots = filtered.filter(c => ["doorloopbal","kleine_kans","strafworp","vrije_bal"].includes(c.actionType));
     const chanceGoals = chanceShots.filter(c => c.result === "goal");
 
-    const reboundsAttack = filtered.filter(c => c.actionType === "rebound_win").length;
-    const reboundsDefense = filtered.filter(c => c.actionType === "rebound_verdediging").length;
-    const totalRebounds = reboundsAttack + reboundsDefense;
+    const reboundsAttackWin = filtered.filter(c => c.actionType === "rebound_win").length;
+    const reboundsAttackLose = filtered.filter(c => c.actionType === "rebound_lose").length;
+    const totalReboundsAttack = reboundsAttackWin + reboundsAttackLose;
+
+    const reboundsDefenseWin = filtered.filter(c => ["rebound_verdediging", "rebound_def_win"].includes(c.actionType)).length;
+    const reboundsDefenseLose = filtered.filter(c => c.actionType === "rebound_def_lose").length;
+    const totalReboundsDefense = reboundsDefenseWin + reboundsDefenseLose;
 
     return {
       totalShots: shots.length,
@@ -174,11 +178,11 @@ export default function Statistics() {
       fouls: filtered.filter(c => c.actionType === "overtreding").length,
       defensiveDeflections: filtered.filter(c => c.actionType === "verdedigd").length,
       interceptions: filtered.filter(c => ["onderschepping","overname"].includes(c.actionType)).length,
-      reboundsAttack,
-      reboundsDefense,
-      totalRebounds,
-      reboundAttackPct: totalRebounds ? Math.round((reboundsAttack / totalRebounds) * 100) : 0,
-      reboundDefensePct: totalRebounds ? Math.round((reboundsDefense / totalRebounds) * 100) : 0,
+      reboundsAttack: reboundsAttackWin,
+      reboundsDefense: reboundsDefenseWin,
+      totalRebounds: totalReboundsAttack + totalReboundsDefense,
+      reboundAttackPct: totalReboundsAttack ? Math.round((reboundsAttackWin / totalReboundsAttack) * 100) : 0,
+      reboundDefensePct: totalReboundsDefense ? Math.round((reboundsDefenseWin / totalReboundsDefense) * 100) : 0,
     };
   }, [filtered]);
 
@@ -268,7 +272,7 @@ export default function Statistics() {
 
       // Rebounds
       if (c.actionType === "rebound_win") row.rebAttack += 1;
-      if (c.actionType === "rebound_verdediging") row.rebDefense += 1;
+      if (["rebound_verdediging", "rebound_def_win"].includes(c.actionType)) row.rebDefense += 1;
 
       // Balverlies
       if (c.actionType === "balverlies") row.turnovers += 1;

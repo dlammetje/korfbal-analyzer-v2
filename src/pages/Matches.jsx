@@ -381,7 +381,8 @@ export default function Matches() {
       <h2 className="text-2xl font-semibold">Wedstrijden</h2>
 
       {/* CREATE MATCH */}
-      <div className="bg-neutral-900 border border-neutral-800 rounded-2xl p-4 space-y-3">
+      <div className="bg-[#FF6124]/10 border border-[#FF6124]/40 rounded-2xl p-4 space-y-3 shadow-[0_0_0_1px_rgba(0,0,0,0.4)]">
+        <h3 className="text-lg font-semibold text-[#FF6124] tracking-wide mb-1">Nieuwe wedstrijd aanmaken</h3>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
           <div>
             <label className="text-xs text-neutral-400">Datum</label>

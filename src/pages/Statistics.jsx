@@ -477,8 +477,8 @@ export default function Statistics() {
     <div className="p-6 space-y-6">
       <h2 className="text-2xl font-semibold">Statistieken</h2>
 
-      <div className="bg-neutral-900 border border-neutral-800 p-4 rounded-2xl">
-        <h3 className="text-sm font-semibold text-neutral-200 mb-3">Filters</h3>
+      <div className="bg-[#FF6124]/10 border border-[#FF6124]/40 p-4 rounded-2xl shadow-[0_0_0_1px_rgba(0,0,0,0.4)]">
+        <h3 className="text-sm font-semibold text-[#FF6124] mb-3 tracking-wide">Filters</h3>
         <div className="grid grid-cols-2 md:grid-cols-6 gap-4">
           <Filter label="Team" value={selectedTeam} setter={setSelectedTeam} options={["all", ...allTeams]} />
           <Filter label="Speler" value={selectedPlayer} setter={setSelectedPlayer} options={["all", ...allPlayers]} />
@@ -616,8 +616,8 @@ export default function Statistics() {
       <PlayerStatsTable rows={perPlayerStats.rows} total={perPlayerStats.total} />
 
       {/* Speler A vs Speler B (+ C) vergelijking */}
-      <div className="bg-neutral-900 border border-neutral-800 rounded-2xl p-4 space-y-3">
-        <h3 className="text-lg font-semibold">Vergelijk spelers</h3>
+      <div className="bg-[#FF6124]/10 border border-[#FF6124]/40 rounded-2xl p-4 space-y-3 shadow-[0_0_0_1px_rgba(0,0,0,0.4)]">
+        <h3 className="text-lg font-semibold text-[#FF6124] tracking-wide">Vergelijk spelers</h3>
         <p className="text-xs text-neutral-400">
           Kies twee of drie spelers om hun kernstatistieken naast elkaar te zien. De vergelijking gebruikt dezelfde filters als hierboven (team, wedstrijd, acties, enz.).
         </p>
@@ -846,9 +846,9 @@ export default function Statistics() {
         )}
       </div>
 
-      {/* Wedstrijd A vs Wedstrijd B (+ C) vergelijking */}
-      <div className="bg-neutral-900 border border-neutral-800 rounded-2xl p-4 space-y-3">
-        <h3 className="text-lg font-semibold">Vergelijk wedstrijden</h3>
+      {/* Vergelijk wedstrijden A vs B (+ C) */}
+      <div className="bg-[#FF6124]/10 border border-[#FF6124]/40 rounded-2xl p-4 space-y-3 shadow-[0_0_0_1px_rgba(0,0,0,0.4)]">
+        <h3 className="text-lg font-semibold text-[#FF6124] tracking-wide">Vergelijk wedstrijden</h3>
         <p className="text-xs text-neutral-400">
           Kies twee of drie wedstrijden om hun kernstatistieken naast elkaar te zien. De vergelijking gebruikt dezelfde filters als hierboven (team, speler, acties, enz.), maar negeert de "Wedstrijd"-filter.
         </p>

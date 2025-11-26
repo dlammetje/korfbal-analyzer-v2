@@ -1,6 +1,8 @@
+/* stylelint-disable at-rule-no-unknown */
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+/* stylelint-enable at-rule-no-unknown */
 
 :root {
   /* Standaard accentkleur (oranje) */
@@ -45,4 +47,9 @@ body {
 
 .bg-\[\#FF6124\]\/20 {
   background-color: color-mix(in srgb, var(--accent-color) 20%, transparent) !important;
+}
+
+/* Transparante randvariant voor kaarten die met de accentkleur mee moeten bewegen */
+.border-\[\#FF6124\]\/40 {
+  border-color: color-mix(in srgb, var(--accent-color) 40%, transparent) !important;
 }

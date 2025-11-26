@@ -126,6 +126,9 @@ export default function MatchDetail() {
   const [playlistActive, setPlaylistActive] = useState(false);
   const [playlistIndex, setPlaylistIndex] = useState(0);
 
+  // --- AI-voorgestelde clips (dummy voor nu) ---
+  const [aiSuggestions, setAiSuggestions] = useState([]);
+
   // Laad clubId van de ingelogde gebruiker zodat nieuwe clips aan een club gekoppeld kunnen worden
   useEffect(() => {
     if (!currentUser) {
@@ -542,12 +545,108 @@ export default function MatchDetail() {
     }
   }
 
+  // Speel een AI-suggestie (zonder dat het al een echte clip is)
+  function playSuggestion(s) {
+    if (!videoRef.current) return;
+    const start = Math.max(0, (s.time || 0) - prePost.pre);
+
+    if ((s.half || 1) !== currentHalf) {
+      setCurrentHalf(s.half || 1);
+      setTimeout(() => {
+        if (!videoRef.current) return;
+        videoRef.current.currentTime = start;
+        videoRef.current.play();
+        setPlaying(true);
+      }, 80);
+    } else {
+      videoRef.current.currentTime = start;
+      videoRef.current.play();
+      setPlaying(true);
+    }
+  }
+
   // Speel alle huidige playlistClips achter elkaar
   function playAllClips() {
     if (!videoRef.current || !playlistClips.length) return;
     setPlaylistIndex(0);
     setPlaylistActive(true);
     playClip(playlistClips[0]);
+  }
+
+  // Genereer wat dummy-suggesties om de AI-flow te testen
+  function generateDummySuggestions() {
+    if (!match) return;
+
+    const baseTime = videoRef.current?.currentTime || 60;
+    const half = currentHalf || 1;
+
+    const now = Date.now();
+    const dummy = [0, 30, 60].map((offset, idx) => ({
+      id: `dummy-${now}-${idx}`,
+      matchId: match.id,
+      time: baseTime + offset,
+      half,
+      type: "schot",
+      actionType: "schot",
+      playerId: "",
+    }));
+
+    setAiSuggestions(dummy);
+  }
+
+  // Zet een AI-suggestie om in een echte clip in de database
+  function acceptSuggestion(s) {
+    if (!match) return;
+
+    const chosenPlayerId = s.playerId || playerId;
+    if (!chosenPlayerId) {
+      alert("Kies eerst een speler voor deze suggestie (in de rij of rechtsboven bij Speler).");
+      return;
+    }
+
+    if (!fieldPosition || typeof fieldPosition.x !== "number" || typeof fieldPosition.y !== "number") {
+      alert("Kies eerst een veldlocatie in de kaart rechts voordat je deze suggestie omzet naar een clip.");
+      return;
+    }
+
+    const zoneToUse = fieldPosition ? inferZoneFromPosition(fieldPosition) : zone;
+
+    const actionId = s.actionType || s.type || "schot";
+    const actionFromList = ATTACK_ACTIONS.find((a) => a.id === actionId);
+    const action =
+      actionFromList || {
+        id: actionId,
+        label: (s.type || actionId || "Schot").toString(),
+        isChance: true,
+      };
+
+    const base = {
+      matchId: match.id,
+      playerId: chosenPlayerId,
+      teamId: match.homeTeamId,
+      time: s.time || 0,
+      half: s.half || 1,
+      phase: "attack",
+      zone: zoneToUse,
+      actionType: action.id,
+      result: null,
+      opponentGoal: false,
+      customActionId: null,
+      sequenceId: activeSequenceId || null,
+      x: fieldPosition && typeof fieldPosition.x === "number" ? fieldPosition.x : null,
+      y: fieldPosition && typeof fieldPosition.y === "number" ? fieldPosition.y : null,
+      clubId: userClubId || null,
+    };
+
+    if (action.isChance) {
+      setChancePrompt({ action, base });
+    } else {
+      addClip(base);
+    }
+
+    // Reset veldlocatie na gebruik, zodat volgende clips niet automatisch dezelfde positie krijgen
+    setFieldPosition(null);
+    setAiSuggestions((prev) => prev.filter((x) => x.id !== s.id));
   }
 
   // Luister naar tijdsverloop om automatisch naar de volgende clip te gaan
@@ -784,6 +883,35 @@ export default function MatchDetail() {
                 3s <ChevronRight size={14} />
               </button>
 
+              {/* Pre/Post (seconden) tussen scrub en helft-knoppen */}
+              <div className="flex items-end gap-3 ml-4">
+                <div className="flex items-center gap-2">
+                  <label className="text-xs text-neutral-400">Pre (s)</label>
+                  <input
+                    type="number"
+                    min={0}
+                    value={prePost.pre}
+                    onChange={(e) =>
+                      setPrePost((pp) => ({ ...pp, pre: Number(e.target.value || 0) }))
+                    }
+                    className="w-16 bg-neutral-900 border border-neutral-700 rounded-lg px-2 py-1 text-xs text-neutral-100"
+                  />
+                </div>
+                <div className="flex items-center gap-2">
+                  <label className="text-xs text-neutral-400">Post (s)</label>
+                  <input
+                    type="number"
+                    min={0}
+                    value={prePost.post}
+                    onChange={(e) =>
+                      setPrePost((pp) => ({ ...pp, post: Number(e.target.value || 0) }))
+                    }
+                    className="w-16 bg-neutral-900 border border-neutral-700 rounded-lg px-2 py-1 text-xs text-neutral-100"
+                  />
+                </div>
+              </div>
+
+              {/* Halve knoppen helemaal rechts, zoals origineel */}
               <div className="ml-auto flex gap-2">
                 <button
                   onClick={() => setCurrentHalf(1)}
@@ -981,6 +1109,102 @@ export default function MatchDetail() {
             </div>
           </div>
 
+          {/* AI-VOORGESTELDE CLIPS (dummy) */}
+          <div className="bg-[#FF6124]/10 border border-[#FF6124]/40 rounded-2xl p-4 space-y-3 shadow-[0_0_0_1px_rgba(0,0,0,0.4)]">
+            <div className="flex items-center justify-between gap-2">
+              <div>
+                <h3 className="text-[#FF6124] font-semibold text-sm tracking-wide">Voorgestelde clips (AI)</h3>
+                <p className="text-[11px] text-[#FF6124] font-semibold mt-0.5">
+                  KOMT BINNENKORT – DEZE AI-FUNCTIE WERKT NOG NIET IN PRODUCTIE.
+                </p>
+                <p className="text-xs text-neutral-300 mt-0.5">
+                  Testsectie voor AI-voorstellen: generateert voorbeeld-suggesties zodat je de flow kunt proberen.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={generateDummySuggestions}
+                className="px-3 py-1.5 rounded-xl bg-neutral-900/90 border border-[#FF6124] text-[#FF6124] text-xs hover:bg-[#FF6124]/20 whitespace-nowrap"
+              >
+                Genereer test-suggesties
+              </button>
+            </div>
+
+            {aiSuggestions.length ? (
+              <div className="border-t border-neutral-800 pt-2 overflow-x-auto">
+                <table className="w-full text-xs bg-[#FF6124]/10 border border-[#FF6124]/40 rounded-xl overflow-hidden">
+                  <thead className="bg-[#FF6124]/20 text-[#FF6124]">
+                    <tr className="border-b border-[#FF6124]/40">
+                      <th className="text-left py-1.5 px-2">Tijd</th>
+                      <th className="text-left py-1.5 px-2">Helft</th>
+                      <th className="text-left py-1.5 px-2">Type</th>
+                      <th className="text-left py-1.5 px-2">Speler</th>
+                      <th className="text-right py-1.5 px-2">Acties</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {aiSuggestions.map((s) => (
+                      <tr key={s.id} className="border-t border-[#FF6124]/25 hover:bg-[#FF6124]/10">
+                        <td className="py-1.5 px-2 text-neutral-100">{fmt(s.time || 0)}</td>
+                        <td className="py-1.5 px-2 text-neutral-100">{s.half || 1}e</td>
+                        <td className="py-1.5 px-2 text-neutral-200">{s.type || "schot"}</td>
+                        <td className="py-1.5 px-2">
+                          <select
+                            value={s.playerId || ""}
+                            onChange={(e) => {
+                              const value = e.target.value;
+                              setAiSuggestions((prev) =>
+                                prev.map((x) => (x.id === s.id ? { ...x, playerId: value } : x))
+                              );
+                            }}
+                            className="bg-neutral-950/80 border border-neutral-700 rounded-lg px-2 py-1 text-[11px] text-neutral-100 max-w-[180px]"
+                          >
+                            <option value="">— kies speler —</option>
+                            {matchPlayers.map((p) => (
+                              <option key={p.id} value={p.id}>
+                                {p.number ? `#${p.number} ` : ""}
+                                {p.name}
+                              </option>
+                            ))}
+                          </select>
+                        </td>
+                        <td className="py-1.5 px-2 text-right space-x-2">
+                          <button
+                            type="button"
+                            onClick={() => playSuggestion(s)}
+                            className="text-xs px-2 py-1 rounded-lg border border-neutral-600 text-neutral-200 bg-neutral-900/70 hover:bg-neutral-800"
+                          >
+                            Speel
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => acceptSuggestion(s)}
+                            className="text-xs px-2 py-1 rounded-lg border border-neutral-600 text-neutral-100 bg-neutral-900/70 hover:bg-neutral-800"
+                          >
+                            Maak clip
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setAiSuggestions((prev) => prev.filter((x) => x.id !== s.id))
+                            }
+                            className="text-xs px-2 py-1 rounded-lg border border-neutral-700 text-neutral-400 bg-neutral-900/70 hover:border-red-500 hover:text-red-400"
+                          >
+                            Verwijder
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+              <div className="text-xs text-neutral-500">
+                Nog geen suggesties. Klik op "Genereer test-suggesties" om de AI-flow te proberen.
+              </div>
+            )}
+          </div>
+
           {/* SEQUENCES VOOR DEZE WEDSTRIJD */}
           <div className="bg-neutral-900 border border-neutral-800 rounded-2xl p-4 space-y-4">
             <h3 className="text-neutral-100 font-medium text-sm">Sequenties voor deze wedstrijd</h3>
@@ -1081,34 +1305,6 @@ export default function MatchDetail() {
                 </option>
               ))}
             </select>
-          </div>
-
-          {/* PRE / POST CONTROLS */}
-          <div className="flex gap-3 items-end">
-            <div className="flex-1">
-              <label className="text-neutral-400 text-sm">Pre (seconden)</label>
-              <input
-                type="number"
-                min={0}
-                value={prePost.pre}
-                onChange={(e) =>
-                  setPrePost((pp) => ({ ...pp, pre: Number(e.target.value || 0) }))
-                }
-                className="w-full bg-neutral-900 border border-neutral-800 rounded-xl px-3 py-2 text-sm mt-1"
-              />
-            </div>
-            <div className="flex-1">
-              <label className="text-neutral-400 text-sm">Post (seconden)</label>
-              <input
-                type="number"
-                min={0}
-                value={prePost.post}
-                onChange={(e) =>
-                  setPrePost((pp) => ({ ...pp, post: Number(e.target.value || 0) }))
-                }
-                className="w-full bg-neutral-900 border border-neutral-800 rounded-xl px-3 py-2 text-sm mt-1"
-              />
-            </div>
           </div>
 
           {/* VELDLOCATIE */}

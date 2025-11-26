@@ -296,13 +296,11 @@ export default function MatchDetail() {
     return zone;
   }
 
-  // --- Load saved video URLs on mount / when match changes ---
+  // --- Load saved video URLs on mount / when video-URLs zelf veranderen ---
   useEffect(() => {
     if (!match) {
       setSrc1("");
       setSrc2("");
-      setCurrentHalf(1);
-      setPlaying(false);
       return;
     }
 
@@ -314,9 +312,7 @@ export default function MatchDetail() {
 
     setSrc1(urls.half1 || saved.half1 || "");
     setSrc2(urls.half2 || saved.half2 || "");
-    setCurrentHalf(1);
-    setPlaying(false);
-  }, [match, loadMatchVideosLocally]);
+  }, [matchId, match?.videoUrls?.half1, match?.videoUrls?.half2, loadMatchVideosLocally]);
 
   useEffect(() => {
     function isTypingInInput(e) {

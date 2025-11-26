@@ -10,6 +10,7 @@ import {
   updateEmail,
   EmailAuthProvider,
   reauthenticateWithCredential,
+  deleteUser,
 } from "firebase/auth";
 import { auth } from "../lib/firebaseClient";
 
@@ -35,6 +36,20 @@ export function AuthProvider({ children }) {
       return userCredential.user;
     } catch (error) {
       console.error("Fout bij aanmaken account:", error);
+      throw error;
+    }
+  };
+
+  // Functie om het huidige account definitief te verwijderen
+  const deleteAccount = async () => {
+    try {
+      if (!auth.currentUser) {
+        throw new Error("Geen gebruiker ingelogd");
+      }
+      await deleteUser(auth.currentUser);
+      setCurrentUser(null);
+    } catch (error) {
+      console.error("Account verwijderen mislukt:", error);
       throw error;
     }
   };
@@ -131,6 +146,7 @@ export function AuthProvider({ children }) {
     sendVerificationEmail,
     resetPassword,
     changeEmail,
+    deleteAccount,
   };
 
   return (

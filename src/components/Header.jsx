@@ -1,10 +1,13 @@
 import React, { useState, useEffect } from "react";
 import { Link } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
+import { db } from "../lib/firebaseClient";
+import { doc, getDoc } from "firebase/firestore";
 
 export default function Header() {
   const { currentUser, logout } = useAuth();
   const [showVerificationBanner, setShowVerificationBanner] = useState(false);
+  const [clubWebsite, setClubWebsite] = useState("");
 
   useEffect(() => {
     if (currentUser && !currentUser.emailVerified) {
@@ -12,6 +15,32 @@ export default function Header() {
     } else {
       setShowVerificationBanner(false);
     }
+  }, [currentUser]);
+
+  // Lees optioneel de clubwebsite uit het gebruikersprofiel
+  useEffect(() => {
+    let cancelled = false;
+    async function loadClubWebsite() {
+      if (!currentUser || !currentUser.uid) {
+        setClubWebsite("");
+        return;
+      }
+      try {
+        const ref = doc(db, "users", currentUser.uid);
+        const snap = await getDoc(ref);
+        if (!cancelled && snap.exists()) {
+          const data = snap.data() || {};
+          setClubWebsite(data.clubWebsite || "");
+        }
+      } catch (e) {
+        console.error("[Header] Fout bij laden clubWebsite:", e);
+      }
+    }
+
+    loadClubWebsite();
+    return () => {
+      cancelled = true;
+    };
   }, [currentUser]);
 
   async function handleLogout() {
@@ -38,12 +67,23 @@ export default function Header() {
         </div>
       )}
       <header className="bg-neutral-900 border-b border-neutral-800">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div className="px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between h-16 items-center">
             <div className="flex-shrink-0 flex items-center">
-              <Link to="/" className="text-white font-bold text-xl">
-                Sparta (N)/Djops
-              </Link>
+              {clubWebsite ? (
+                <a
+                  href={clubWebsite}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="text-white font-bold text-xl hover:text-[#FF6124] transition-colors"
+                >
+                  Sparta (N)/Djops
+                </a>
+              ) : (
+                <Link to="/" className="text-white font-bold text-xl">
+                  Sparta (N)/Djops
+                </Link>
+              )}
             </div>
             <div className="flex items-center space-x-4">
               {currentUser ? (

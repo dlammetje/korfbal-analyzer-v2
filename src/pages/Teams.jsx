@@ -1,4 +1,5 @@
 import React, { useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { Plus, Trash2, Users } from "lucide-react";
 import { useAppData } from "../context/AppDataContext";
 
@@ -14,6 +15,8 @@ const {
   addOpponentToTeam, 
   removeOpponentFromTeam 
 } = useAppData();
+
+  const navigate = useNavigate();
 
   const [newTeamName, setNewTeamName] = useState("");
   const [selectedTeamId, setSelectedTeamId] = useState(null);
@@ -183,6 +186,7 @@ const {
                   <tr className="text-neutral-400">
                     <th className="py-2 text-left">Rugnr</th>
                     <th className="text-left">Naam</th>
+                    <th className="text-center">Profiel</th>
                     <th></th>
                   </tr>
                 </thead>
@@ -191,6 +195,15 @@ const {
                     <tr key={p.id} className="border-t border-neutral-800 hover:bg-neutral-950">
                       <td className="py-2">{p.number}</td>
                       <td>{p.name}</td>
+                      <td className="text-center">
+                        <button
+                          type="button"
+                          className="text-xs text-[#FF6124] hover:underline"
+                          onClick={() => navigate(`/player/${encodeURIComponent(p.name)}`)}
+                        >
+                          Profiel
+                        </button>
+                      </td>
                       <td className="text-right">
                         <button
                           onClick={async () => {

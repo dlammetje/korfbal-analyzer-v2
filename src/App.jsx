@@ -8,6 +8,7 @@ import Dashboard from "./pages/Dashboard";
 import Matches from "./pages/Matches";
 import MatchDetail from "./pages/MatchDetail";
 import Statistics from "./pages/Statistics";
+import PlayerProfile from "./pages/PlayerProfile";
 import Teams from "./pages/Teams";
 import Settings from "./pages/Settings";
 import Login from "./pages/Login";
@@ -48,6 +49,7 @@ function AppContent() {
             <Route path="/matches/:matchId" element={<PrivateRoute><MatchDetail /></PrivateRoute>} />
             <Route path="/match/:matchId" element={<PrivateRoute><MatchDetail /></PrivateRoute>} />
             <Route path="/statistics" element={<PrivateRoute><Statistics /></PrivateRoute>} />
+            <Route path="/player/:playerName" element={<PrivateRoute><PlayerProfile /></PrivateRoute>} />
             <Route path="/teams" element={<PrivateRoute><Teams /></PrivateRoute>} />
             <Route path="/settings" element={<PrivateRoute><Settings /></PrivateRoute>} />
           </Routes>

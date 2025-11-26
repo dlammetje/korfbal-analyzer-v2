@@ -31,6 +31,18 @@ export default function Statistics() {
   const [selectedResult, setSelectedResult] = useState("all");
   const [selectedMatch, setSelectedMatch] = useState("all");
 
+  // Vergelijking Speler A vs Speler B (+ optioneel C)
+  const [comparePlayerA, setComparePlayerA] = useState("");
+  const [comparePlayerB, setComparePlayerB] = useState("");
+  const [comparePlayerC, setComparePlayerC] = useState("");
+  const [showCompareC, setShowCompareC] = useState(false);
+
+  // Vergelijking Wedstrijd A vs Wedstrijd B (+ optioneel C)
+  const [compareMatchA, setCompareMatchA] = useState("");
+  const [compareMatchB, setCompareMatchB] = useState("");
+  const [compareMatchC, setCompareMatchC] = useState("");
+  const [showCompareMatchC, setShowCompareMatchC] = useState(false);
+
   const [selectedSequenceId, setSelectedSequenceId] = useState("");
   const [playlistIndex, setPlaylistIndex] = useState(0);
   const videoRef = useRef(null);
@@ -300,6 +312,79 @@ export default function Statistics() {
     return { rows, total };
   }, [filtered, selectedTeam]);
 
+  // Hulp: zoek stats voor een specifieke spelernaam binnen de perPlayerStats.rows
+  const compareRows = useMemo(() => {
+    const rows = perPlayerStats.rows || [];
+    const findRow = (name) => rows.find((r) => r.player === name) || null;
+    return {
+      a: comparePlayerA ? findRow(comparePlayerA) : null,
+      b: comparePlayerB ? findRow(comparePlayerB) : null,
+      c: showCompareC && comparePlayerC ? findRow(comparePlayerC) : null,
+    };
+  }, [perPlayerStats, comparePlayerA, comparePlayerB, comparePlayerC, showCompareC]);
+
+  // Per-wedstrijd statistieken (gebaseerd op dezelfde gefilterde clips)
+  const perMatchStats = useMemo(() => {
+    const byMatch = {};
+
+    const ensure = (name) => {
+      const key = name || "Onbekende wedstrijd";
+      if (!byMatch[key]) {
+        byMatch[key] = {
+          matchName: key,
+          shotAttempts: 0,
+          shotGoals: 0,
+          chanceAttempts: 0,
+          chanceGoals: 0,
+          rebAttack: 0,
+          rebDefense: 0,
+          turnovers: 0,
+          interceptions: 0,
+          fouls: 0,
+        };
+      }
+      return byMatch[key];
+    };
+
+    filtered.forEach((c) => {
+      const row = ensure(c.matchName || "Onbekende wedstrijd");
+
+      // Schoten
+      if (c.actionType === "schot") {
+        row.shotAttempts += 1;
+        if (c.result === "goal") row.shotGoals += 1;
+      }
+
+      // Overige kansen
+      if (["doorloopbal", "kleine_kans", "strafworp", "vrije_bal"].includes(c.actionType)) {
+        row.chanceAttempts += 1;
+        if (c.result === "goal") row.chanceGoals += 1;
+      }
+
+      // Rebounds
+      if (c.actionType === "rebound_win") row.rebAttack += 1;
+      if (c.actionType === "rebound_verdediging") row.rebDefense += 1;
+
+      // Balverlies
+      if (c.actionType === "balverlies") row.turnovers += 1;
+
+      // Ondersch./overname
+      if (["onderschepping", "overname"].includes(c.actionType)) row.interceptions += 1;
+
+      // Overtredingen
+      if (c.actionType === "overtreding") row.fouls += 1;
+    });
+
+    return byMatch;
+  }, [filtered]);
+
+  const compareMatches = useMemo(() => {
+    const a = compareMatchA ? perMatchStats[compareMatchA] || null : null;
+    const b = compareMatchB ? perMatchStats[compareMatchB] || null : null;
+    const c = showCompareMatchC && compareMatchC ? perMatchStats[compareMatchC] || null : null;
+    return { a, b, c };
+  }, [perMatchStats, compareMatchA, compareMatchB, compareMatchC, showCompareMatchC]);
+
   // Clips voor de veld-heatmap met eigen filters (los van de algemene filters bovenaan)
   const mapFiltered = useMemo(() => {
     return enriched.filter((c) => {
@@ -388,29 +473,32 @@ export default function Statistics() {
     <div className="p-6 space-y-6">
       <h2 className="text-2xl font-semibold">Statistieken</h2>
 
-      <div className="bg-neutral-900 border border-neutral-800 p-4 rounded-2xl grid grid-cols-2 md:grid-cols-6 gap-4">
-        <Filter label="Team" value={selectedTeam} setter={setSelectedTeam} options={["all", ...allTeams]} />
-        <Filter label="Speler" value={selectedPlayer} setter={setSelectedPlayer} options={["all", ...allPlayers]} />
-        <Filter label="Zone" value={selectedZone} setter={setSelectedZone} options={["all", ...ZONES]} />
-        <Filter label="Actie" value={selectedAction} setter={setSelectedAction} options={["all", ...allActions]} />
-        <Filter label="Helft" value={selectedHalf} setter={setSelectedHalf} options={["all", "1", "2"]} />
-        <Filter label="Resultaat" value={selectedResult} setter={setSelectedResult} options={["all", "goal", "miss", "opp_goal"]} />
-        <Filter
-          label="Wedstrijd"
-          value={selectedMatch}
-          setter={setSelectedMatch}
-          options={[
-            "all",
-            ...matchesForClub.map((m) => {
-              const home = teams.find((t) => t.id === m.homeTeamId);
-              const away = teams.find((t) => t.id === m.awayTeamId);
-              const datePart = m.date || "Onbekende datum";
-              const homeName = home?.name || m.homeTeamId;
-              const awayName = away?.name || m.awayTeamId;
-              return `${datePart} — ${homeName} vs ${awayName}`;
-            }),
-          ]}
-        />
+      <div className="bg-neutral-900 border border-neutral-800 p-4 rounded-2xl">
+        <h3 className="text-sm font-semibold text-neutral-200 mb-3">Filters</h3>
+        <div className="grid grid-cols-2 md:grid-cols-6 gap-4">
+          <Filter label="Team" value={selectedTeam} setter={setSelectedTeam} options={["all", ...allTeams]} />
+          <Filter label="Speler" value={selectedPlayer} setter={setSelectedPlayer} options={["all", ...allPlayers]} />
+          <Filter label="Zone" value={selectedZone} setter={setSelectedZone} options={["all", ...ZONES]} />
+          <Filter label="Actie" value={selectedAction} setter={setSelectedAction} options={["all", ...allActions]} />
+          <Filter label="Helft" value={selectedHalf} setter={setSelectedHalf} options={["all", "1", "2"]} />
+          <Filter label="Resultaat" value={selectedResult} setter={setSelectedResult} options={["all", "goal", "miss", "opp_goal"]} />
+          <Filter
+            label="Wedstrijd"
+            value={selectedMatch}
+            setter={setSelectedMatch}
+            options={[
+              "all",
+              ...matchesForClub.map((m) => {
+                const home = teams.find((t) => t.id === m.homeTeamId);
+                const away = teams.find((t) => t.id === m.awayTeamId);
+                const datePart = m.date || "Onbekende datum";
+                const homeName = home?.name || m.homeTeamId;
+                const awayName = away?.name || m.awayTeamId;
+                return `${datePart} — ${homeName} vs ${awayName}`;
+              }),
+            ]}
+          />
+        </div>
       </div>
 
       <button
@@ -469,7 +557,7 @@ export default function Statistics() {
         <StatCard title="Missers" value={playerStats.misses} color="#dc2626" />
         <StatCard title="Raak% schoten" value={`${playerStats.fg}%`} color="#FF6124" />
         <StatCard title="Mis% schoten" value={`${playerStats.missPct}%`} color="#dc2626" />
-        <StatCard title="Raak% kansen" value={`${playerStats.chanceFg}%`} color="#22c55e"/>
+        <StatCard title="Raak% overige kansen" value={`${playerStats.chanceFg}%`} color="#22c55e"/>
         <StatCard title="Assists" value={playerStats.assists} />
         <StatCard title="Balverlies" value={playerStats.turnovers} />
         <StatCard title="Overtredingen" value={playerStats.fouls} />
@@ -522,7 +610,480 @@ export default function Statistics() {
 
       {/* Per-speler overzichtstabel voor de huidige selectie */}
       <PlayerStatsTable rows={perPlayerStats.rows} total={perPlayerStats.total} />
+
+      {/* Speler A vs Speler B (+ C) vergelijking */}
+      <div className="bg-neutral-900 border border-neutral-800 rounded-2xl p-4 space-y-3">
+        <h3 className="text-lg font-semibold">Vergelijk spelers</h3>
+        <p className="text-xs text-neutral-400">
+          Kies twee of drie spelers om hun kernstatistieken naast elkaar te zien. De vergelijking gebruikt dezelfde filters als hierboven (team, wedstrijd, acties, enz.).
+        </p>
+        <div className="flex flex-col sm:flex-row gap-3 items-stretch sm:items-end">
+          <div className="flex-1">
+            <label className="text-xs text-neutral-400 block mb-1">Speler A</label>
+            <select
+              value={comparePlayerA}
+              onChange={(e) => setComparePlayerA(e.target.value)}
+              className="bg-neutral-800 border border-neutral-700 px-3 py-2 rounded-xl text-sm w-full"
+            >
+              <option value="">(kies speler)</option>
+              {perPlayerStats.rows.map((r) => (
+                <option key={r.player} value={r.player}>
+                  {r.player}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="flex-1">
+            <label className="text-xs text-neutral-400 block mb-1">Speler B</label>
+            <select
+              value={comparePlayerB}
+              onChange={(e) => setComparePlayerB(e.target.value)}
+              className="bg-neutral-800 border border-neutral-700 px-3 py-2 rounded-xl text-sm w-full"
+            >
+              <option value="">(kies speler)</option>
+              {perPlayerStats.rows.map((r) => (
+                <option key={r.player} value={r.player}>
+                  {r.player}
+                </option>
+              ))}
+            </select>
+          </div>
+          {showCompareC && (
+            <div className="flex-1">
+              <label className="text-xs text-neutral-400 block mb-1">Speler C</label>
+              <select
+                value={comparePlayerC}
+                onChange={(e) => setComparePlayerC(e.target.value)}
+                className="bg-neutral-800 border border-neutral-700 px-3 py-2 rounded-xl text-sm w-full"
+              >
+                <option value="">(kies speler)</option>
+                {perPlayerStats.rows.map((r) => (
+                  <option key={r.player} value={r.player}>
+                    {r.player}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
+          <div className="flex items-end">
+            {!showCompareC && (
+              <button
+                type="button"
+                className="mt-5 inline-flex items-center justify-center w-9 h-9 rounded-full bg-[#FF6124] text-white text-lg"
+                onClick={() => setShowCompareC(true)}
+              >
+                +
+              </button>
+            )}
+            {showCompareC && (
+              <button
+                type="button"
+                className="mt-5 inline-flex items-center justify-center w-9 h-9 rounded-full bg-neutral-800 border border-neutral-600 text-neutral-300"
+                onClick={() => {
+                  setShowCompareC(false);
+                  setComparePlayerC("");
+                }}
+                title="Verwijder Speler C"
+              >
+                ×
+              </button>
+            )}
+          </div>
+        </div>
+
+        {(compareRows.a || compareRows.b) && (
+          <div className="mt-3 overflow-x-auto">
+            <table className="min-w-full text-xs">
+              <thead className="text-neutral-400">
+                <tr className="border-b border-neutral-800">
+                  <th className="text-left py-2 pr-3">KPI</th>
+                  <th className="text-center px-3">Speler A{compareRows.a ? ` (${compareRows.a.player})` : ""}</th>
+                  <th className="text-center px-3">Speler B{compareRows.b ? ` (${compareRows.b.player})` : ""}</th>
+                  {showCompareC && (
+                    <th className="text-center px-3">Speler C{compareRows.c ? ` (${compareRows.c.player})` : ""}</th>
+                  )}
+                </tr>
+              </thead>
+              <tbody>
+                {/* Schoten */}
+                <tr className="border-t border-neutral-800">
+                  <td className="py-2 pr-3 text-neutral-200 whitespace-nowrap">Schoten (raak/pogingen, FG%)</td>
+                  <td className="text-center px-3 text-neutral-100">
+                    {(() => {
+                      const r = compareRows.a;
+                      if (!r) return "-";
+                      const att = r.shotAttempts || 0;
+                      const goals = r.shotGoals || 0;
+                      const pct = att ? Math.round((goals / att) * 100) : 0;
+                      return `${goals}/${att} (${pct}%)`;
+                    })()}
+                  </td>
+                  <td className="text-center px-3 text-neutral-100">
+                    {(() => {
+                      const r = compareRows.b;
+                      if (!r) return "-";
+                      const att = r.shotAttempts || 0;
+                      const goals = r.shotGoals || 0;
+                      const pct = att ? Math.round((goals / att) * 100) : 0;
+                      return `${goals}/${att} (${pct}%)`;
+                    })()}
+                  </td>
+                  {showCompareC && (
+                    <td className="text-center px-3 text-neutral-100">
+                      {(() => {
+                        const r = compareRows.c;
+                        if (!r) return "-";
+                        const att = r.shotAttempts || 0;
+                        const goals = r.shotGoals || 0;
+                        const pct = att ? Math.round((goals / att) * 100) : 0;
+                        return `${goals}/${att} (${pct}%)`;
+                      })()}
+                    </td>
+                  )}
+                </tr>
+
+                {/* Overige kansen */}
+                <tr className="border-t border-neutral-800">
+                  <td className="py-2 pr-3 text-neutral-200 whitespace-nowrap">Overige kansen (raak/pogingen, FG%)</td>
+                  <td className="text-center px-3 text-neutral-100">
+                    {(() => {
+                      const r = compareRows.a;
+                      if (!r) return "-";
+                      const att = r.chanceAttempts || 0;
+                      const goals = r.chanceGoals || 0;
+                      const pct = att ? Math.round((goals / att) * 100) : 0;
+                      return `${goals}/${att} (${pct}%)`;
+                    })()}
+                  </td>
+                  <td className="text-center px-3 text-neutral-100">
+                    {(() => {
+                      const r = compareRows.b;
+                      if (!r) return "-";
+                      const att = r.chanceAttempts || 0;
+                      const goals = r.chanceGoals || 0;
+                      const pct = att ? Math.round((goals / att) * 100) : 0;
+                      return `${goals}/${att} (${pct}%)`;
+                    })()}
+                  </td>
+                  {showCompareC && (
+                    <td className="text-center px-3 text-neutral-100">
+                      {(() => {
+                        const r = compareRows.c;
+                        if (!r) return "-";
+                        const att = r.chanceAttempts || 0;
+                        const goals = r.chanceGoals || 0;
+                        const pct = att ? Math.round((goals / att) * 100) : 0;
+                        return `${goals}/${att} (${pct}%)`;
+                      })()}
+                    </td>
+                  )}
+                </tr>
+
+                {/* Rebounds */}
+                <tr className="border-t border-neutral-800">
+                  <td className="py-2 pr-3 text-neutral-200 whitespace-nowrap">Rebounds (aanval/verd.)</td>
+                  <td className="text-center px-3 text-neutral-100">
+                    {(() => {
+                      const r = compareRows.a;
+                      if (!r) return "-";
+                      return `${r.rebAttack || 0} / ${r.rebDefense || 0}`;
+                    })()}
+                  </td>
+                  <td className="text-center px-3 text-neutral-100">
+                    {(() => {
+                      const r = compareRows.b;
+                      if (!r) return "-";
+                      return `${r.rebAttack || 0} / ${r.rebDefense || 0}`;
+                    })()}
+                  </td>
+                  {showCompareC && (
+                    <td className="text-center px-3 text-neutral-100">
+                      {(() => {
+                        const r = compareRows.c;
+                        if (!r) return "-";
+                        return `${r.rebAttack || 0} / ${r.rebDefense || 0}`;
+                      })()}
+                    </td>
+                  )}
+                </tr>
+
+                {/* Balverlies */}
+                <tr className="border-t border-neutral-800">
+                  <td className="py-2 pr-3 text-neutral-200 whitespace-nowrap">Balverlies</td>
+                  <td className="text-center px-3 text-neutral-100">{compareRows.a ? compareRows.a.turnovers || 0 : "-"}</td>
+                  <td className="text-center px-3 text-neutral-100">{compareRows.b ? compareRows.b.turnovers || 0 : "-"}</td>
+                  {showCompareC && (
+                    <td className="text-center px-3 text-neutral-100">{compareRows.c ? compareRows.c.turnovers || 0 : "-"}</td>
+                  )}
+                </tr>
+
+                {/* Ondersch./Overnames */}
+                <tr className="border-t border-neutral-800">
+                  <td className="py-2 pr-3 text-neutral-200 whitespace-nowrap">Ondersch./Overnames</td>
+                  <td className="text-center px-3 text-neutral-100">{compareRows.a ? compareRows.a.interceptions || 0 : "-"}</td>
+                  <td className="text-center px-3 text-neutral-100">{compareRows.b ? compareRows.b.interceptions || 0 : "-"}</td>
+                  {showCompareC && (
+                    <td className="text-center px-3 text-neutral-100">{compareRows.c ? compareRows.c.interceptions || 0 : "-"}</td>
+                  )}
+                </tr>
+
+                {/* Overtredingen */}
+                <tr className="border-t border-neutral-800">
+                  <td className="py-2 pr-3 text-neutral-200 whitespace-nowrap">Overtredingen</td>
+                  <td className="text-center px-3 text-neutral-100">{compareRows.a ? compareRows.a.fouls || 0 : "-"}</td>
+                  <td className="text-center px-3 text-neutral-100">{compareRows.b ? compareRows.b.fouls || 0 : "-"}</td>
+                  {showCompareC && (
+                    <td className="text-center px-3 text-neutral-100">{compareRows.c ? compareRows.c.fouls || 0 : "-"}</td>
+                  )}
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
+      {/* Wedstrijd A vs Wedstrijd B (+ C) vergelijking */}
+      <div className="bg-neutral-900 border border-neutral-800 rounded-2xl p-4 space-y-3">
+        <h3 className="text-lg font-semibold">Vergelijk wedstrijden</h3>
+        <p className="text-xs text-neutral-400">
+          Kies twee of drie wedstrijden om hun kernstatistieken naast elkaar te zien. De vergelijking gebruikt dezelfde filters als hierboven (team, speler, acties, enz.), maar negeert de "Wedstrijd"-filter.
+        </p>
+        <div className="flex flex-col sm:flex-row gap-3 items-stretch sm:items-end">
+          <div className="flex-1">
+            <label className="text-xs text-neutral-400 block mb-1">Wedstrijd A</label>
+            <select
+              value={compareMatchA}
+              onChange={(e) => setCompareMatchA(e.target.value)}
+              className="bg-neutral-800 border border-neutral-700 px-3 py-2 rounded-xl text-sm w-full"
+            >
+              <option value="">(kies wedstrijd)</option>
+              {[...new Set(filtered.map((c) => c.matchName).filter(Boolean))].map((name) => (
+                <option key={name} value={name}>
+                  {name}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="flex-1">
+            <label className="text-xs text-neutral-400 block mb-1">Wedstrijd B</label>
+            <select
+              value={compareMatchB}
+              onChange={(e) => setCompareMatchB(e.target.value)}
+              className="bg-neutral-800 border border-neutral-700 px-3 py-2 rounded-xl text-sm w-full"
+            >
+              <option value="">(kies wedstrijd)</option>
+              {[...new Set(filtered.map((c) => c.matchName).filter(Boolean))].map((name) => (
+                <option key={name} value={name}>
+                  {name}
+                </option>
+              ))}
+            </select>
+          </div>
+          {showCompareMatchC && (
+            <div className="flex-1">
+              <label className="text-xs text-neutral-400 block mb-1">Wedstrijd C</label>
+              <select
+                value={compareMatchC}
+                onChange={(e) => setCompareMatchC(e.target.value)}
+                className="bg-neutral-800 border border-neutral-700 px-3 py-2 rounded-xl text-sm w-full"
+              >
+                <option value="">(kies wedstrijd)</option>
+                {[...new Set(filtered.map((c) => c.matchName).filter(Boolean))].map((name) => (
+                  <option key={name} value={name}>
+                    {name}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
+          <div className="flex items-end">
+            {!showCompareMatchC && (
+              <button
+                type="button"
+                className="mt-5 inline-flex items-center justify-center w-9 h-9 rounded-full bg-[#FF6124] text-white text-lg"
+                onClick={() => setShowCompareMatchC(true)}
+              >
+                +
+              </button>
+            )}
+            {showCompareMatchC && (
+              <button
+                type="button"
+                className="mt-5 inline-flex items-center justify-center w-9 h-9 rounded-full bg-neutral-800 border border-neutral-600 text-neutral-300"
+                onClick={() => {
+                  setShowCompareMatchC(false);
+                  setCompareMatchC("");
+                }}
+                title="Verwijder Wedstrijd C"
+              >
+                ×
+              </button>
+            )}
+          </div>
+        </div>
+
+        {(compareMatches.a || compareMatches.b) && (
+          <div className="mt-3 overflow-x-auto">
+            <table className="min-w-full text-xs">
+              <thead className="text-neutral-400">
+                <tr className="border-b border-neutral-800">
+                  <th className="text-left py-2 pr-3">KPI</th>
+                  <th className="text-center px-3">Wedstrijd A{compareMatches.a ? ` (${compareMatches.a.matchName})` : ""}</th>
+                  <th className="text-center px-3">Wedstrijd B{compareMatches.b ? ` (${compareMatches.b.matchName})` : ""}</th>
+                  {showCompareMatchC && (
+                    <th className="text-center px-3">Wedstrijd C{compareMatches.c ? ` (${compareMatches.c.matchName})` : ""}</th>
+                  )}
+                </tr>
+              </thead>
+              <tbody>
+                {/* Schoten */}
+                <tr className="border-t border-neutral-800">
+                  <td className="py-2 pr-3 text-neutral-200 whitespace-nowrap">Schoten (raak/pogingen, FG%)</td>
+                  <td className="text-center px-3 text-neutral-100">
+                    {(() => {
+                      const r = compareMatches.a;
+                      if (!r) return "-";
+                      const att = r.shotAttempts || 0;
+                      const goals = r.shotGoals || 0;
+                      const pct = att ? Math.round((goals / att) * 100) : 0;
+                      return `${goals}/${att} (${pct}%)`;
+                    })()}
+                  </td>
+                  <td className="text-center px-3 text-neutral-100">
+                    {(() => {
+                      const r = compareMatches.b;
+                      if (!r) return "-";
+                      const att = r.shotAttempts || 0;
+                      const goals = r.shotGoals || 0;
+                      const pct = att ? Math.round((goals / att) * 100) : 0;
+                      return `${goals}/${att} (${pct}%)`;
+                    })()}
+                  </td>
+                  {showCompareMatchC && (
+                    <td className="text-center px-3 text-neutral-100">
+                      {(() => {
+                        const r = compareMatches.c;
+                        if (!r) return "-";
+                        const att = r.shotAttempts || 0;
+                        const goals = r.shotGoals || 0;
+                        const pct = att ? Math.round((goals / att) * 100) : 0;
+                        return `${goals}/${att} (${pct}%)`;
+                      })()}
+                    </td>
+                  )}
+                </tr>
+
+                {/* Overige kansen */}
+                <tr className="border-t border-neutral-800">
+                  <td className="py-2 pr-3 text-neutral-200 whitespace-nowrap">Overige kansen (raak/pogingen, FG%)</td>
+                  <td className="text-center px-3 text-neutral-100">
+                    {(() => {
+                      const r = compareMatches.a;
+                      if (!r) return "-";
+                      const att = r.chanceAttempts || 0;
+                      const goals = r.chanceGoals || 0;
+                      const pct = att ? Math.round((goals / att) * 100) : 0;
+                      return `${goals}/${att} (${pct}%)`;
+                    })()}
+                  </td>
+                  <td className="text-center px-3 text-neutral-100">
+                    {(() => {
+                      const r = compareMatches.b;
+                      if (!r) return "-";
+                      const att = r.chanceAttempts || 0;
+                      const goals = r.chanceGoals || 0;
+                      const pct = att ? Math.round((goals / att) * 100) : 0;
+                      return `${goals}/${att} (${pct}%)`;
+                    })()}
+                  </td>
+                  {showCompareMatchC && (
+                    <td className="text-center px-3 text-neutral-100">
+                      {(() => {
+                        const r = compareMatches.c;
+                        if (!r) return "-";
+                        const att = r.chanceAttempts || 0;
+                        const goals = r.chanceGoals || 0;
+                        const pct = att ? Math.round((goals / att) * 100) : 0;
+                        return `${goals}/${att} (${pct}%)`;
+                      })()}
+                    </td>
+                  )}
+                </tr>
+
+                {/* Rebounds */}
+                <tr className="border-t border-neutral-800">
+                  <td className="py-2 pr-3 text-neutral-200 whitespace-nowrap">Rebounds (aanval/verd.)</td>
+                  <td className="text-center px-3 text-neutral-100">
+                    {(() => {
+                      const r = compareMatches.a;
+                      if (!r) return "-";
+                      return `${r.rebAttack || 0} / ${r.rebDefense || 0}`;
+                    })()}
+                  </td>
+                  <td className="text-center px-3 text-neutral-100">
+                    {(() => {
+                      const r = compareMatches.b;
+                      if (!r) return "-";
+                      return `${r.rebAttack || 0} / ${r.rebDefense || 0}`;
+                    })()}
+                  </td>
+                  {showCompareMatchC && (
+                    <td className="text-center px-3 text-neutral-100">
+                      {(() => {
+                        const r = compareMatches.c;
+                        if (!r) return "-";
+                        return `${r.rebAttack || 0} / ${r.rebDefense || 0}`;
+                      })()}
+                    </td>
+                  )}
+                </tr>
+
+                {/* Balverlies */}
+                <tr className="border-t border-neutral-800">
+                  <td className="py-2 pr-3 text-neutral-200 whitespace-nowrap">Balverlies</td>
+                  <td className="text-center px-3 text-neutral-100">{compareMatches.a ? compareMatches.a.turnovers || 0 : "-"}</td>
+                  <td className="text-center px-3 text-neutral-100">{compareMatches.b ? compareMatches.b.turnovers || 0 : "-"}</td>
+                  {showCompareMatchC && (
+                    <td className="text-center px-3 text-neutral-100">{compareMatches.c ? compareMatches.c.turnovers || 0 : "-"}</td>
+                  )}
+                </tr>
+
+                {/* Ondersch./Overnames */}
+                <tr className="border-t border-neutral-800">
+                  <td className="py-2 pr-3 text-neutral-200 whitespace-nowrap">Ondersch./Overnames</td>
+                  <td className="text-center px-3 text-neutral-100">{compareMatches.a ? compareMatches.a.interceptions || 0 : "-"}</td>
+                  <td className="text-center px-3 text-neutral-100">{compareMatches.b ? compareMatches.b.interceptions || 0 : "-"}</td>
+                  {showCompareMatchC && (
+                    <td className="text-center px-3 text-neutral-100">{compareMatches.c ? compareMatches.c.interceptions || 0 : "-"}</td>
+                  )}
+                </tr>
+
+                {/* Overtredingen */}
+                <tr className="border-t border-neutral-800">
+                  <td className="py-2 pr-3 text-neutral-200 whitespace-nowrap">Overtredingen</td>
+                  <td className="text-center px-3 text-neutral-100">{compareMatches.a ? compareMatches.a.fouls || 0 : "-"}</td>
+                  <td className="text-center px-3 text-neutral-100">{compareMatches.b ? compareMatches.b.fouls || 0 : "-"}</td>
+                  {showCompareMatchC && (
+                    <td className="text-center px-3 text-neutral-100">{compareMatches.c ? compareMatches.c.fouls || 0 : "-"}</td>
+                  )}
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
     </div>
+  );
+}
+
+function CompareRow({ label, a, b, render }) {
+  return (
+    <tr className="border-t border-neutral-800">
+      <td className="py-2 pr-3 text-neutral-200 whitespace-nowrap">{label}</td>
+      <td className="text-center px-3 text-neutral-100">{render(a)}</td>
+      <td className="text-center px-3 text-neutral-100">{render(b)}</td>
+    </tr>
   );
 }
 

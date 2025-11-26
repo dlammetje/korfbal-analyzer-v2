@@ -121,6 +121,10 @@ export default function MatchDetail() {
   const [clipFavoritesOnly, setClipFavoritesOnly] = useState(false);
   const [clipActionFilter, setClipActionFilter] = useState("");
 
+  // --- Playlist voor gefilterde clips ---
+  const [playlistActive, setPlaylistActive] = useState(false);
+  const [playlistIndex, setPlaylistIndex] = useState(0);
+
   // Laad clubId van de ingelogde gebruiker zodat nieuwe clips aan een club gekoppeld kunnen worden
   useEffect(() => {
     if (!currentUser) {
@@ -186,7 +190,7 @@ export default function MatchDetail() {
     [match, getSubsByMatch]
   );
 
-  // gefilterde clips op basis van speler-filter
+  // gefilterde clips op basis van speler-/actie-/favorieten-filter
   const filteredClips = useMemo(() => {
     let list = clips;
 
@@ -204,6 +208,17 @@ export default function MatchDetail() {
 
     return list;
   }, [clips, clipPlayerFilter, clipActionFilter, clipFavoritesOnly]);
+
+  // Playlistclips: gesorteerde versie van de huidige gefilterde clips
+  const playlistClips = useMemo(() => {
+    const list = [...filteredClips];
+    return list.sort((a, b) => {
+      const ha = a.half || 1;
+      const hb = b.half || 1;
+      if (ha !== hb) return ha - hb;
+      return (a.time || 0) - (b.time || 0);
+    });
+  }, [filteredClips]);
 
   // unieke spelers die in clips voorkomen (voor filter dropdown)
   const playersWithClips = useMemo(() => {
@@ -526,6 +541,40 @@ export default function MatchDetail() {
     }
   }
 
+  // Speel alle huidige playlistClips achter elkaar
+  function playAllClips() {
+    if (!videoRef.current || !playlistClips.length) return;
+    setPlaylistIndex(0);
+    setPlaylistActive(true);
+    playClip(playlistClips[0]);
+  }
+
+  // Luister naar tijdsverloop om automatisch naar de volgende clip te gaan
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video) return;
+
+    function handleTimeUpdate() {
+      if (!playlistActive || !playlistClips.length) return;
+      const current = playlistClips[playlistIndex];
+      if (!current) return;
+
+      const clipEnd = (current.time || 0) + (prePost.post || 0);
+      if (video.currentTime >= clipEnd - 0.1) {
+        const nextIndex = playlistIndex + 1;
+        if (nextIndex < playlistClips.length) {
+          setPlaylistIndex(nextIndex);
+          playClip(playlistClips[nextIndex]);
+        } else {
+          setPlaylistActive(false);
+        }
+      }
+    }
+
+    video.addEventListener("timeupdate", handleTimeUpdate);
+    return () => video.removeEventListener("timeupdate", handleTimeUpdate);
+  }, [playlistActive, playlistIndex, playlistClips, prePost.post]);
+
   function submitSub(outId, inId) {
     if (!match || !videoRef.current) return;
     if (!outId || !inId || outId === inId) return;
@@ -807,6 +856,20 @@ export default function MatchDetail() {
                   <Star size={12} className={clipFavoritesOnly ? "fill-yellow-400" : ""} />
                   Favorieten
                 </button>
+
+                <button
+                  type="button"
+                  onClick={playAllClips}
+                  disabled={!playlistClips.length}
+                  className={`flex items-center gap-1 px-3 py-1 rounded-lg text-xs border ${
+                    playlistClips.length
+                      ? "border-[#FF6124] text-[#FF6124] bg-[#FF6124]/10 hover:bg-[#FF6124]/20"
+                      : "border-neutral-700 text-neutral-500 bg-neutral-900 cursor-not-allowed"
+                  }`}
+                >
+                  <Play size={12} />
+                  Alles afspelen
+                </button>
               </div>
             </div>
 
@@ -826,14 +889,18 @@ export default function MatchDetail() {
                 </thead>
                 <tbody>
                   {filteredClips.length ? (
-                    filteredClips.map((c) => {
+                    filteredClips.map((c, idx) => {
                       const p = matchPlayers.find((x) => x.id === c.playerId);
                       const isOpp = !!c.opponentGoal;
 
                       return (
                         <tr
                           key={c.id}
-                          onClick={() => playClip(c)}
+                          onClick={() => {
+                            setPlaylistActive(false);
+                            setPlaylistIndex(idx);
+                            playClip(c);
+                          }}
                           className={`border-t border-neutral-800 hover:bg-neutral-900 cursor-pointer ${
                             isOpp ? "bg-red-900/20" : ""
                           }`}

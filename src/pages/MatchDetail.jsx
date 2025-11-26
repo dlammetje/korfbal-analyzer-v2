@@ -521,6 +521,43 @@ export default function MatchDetail() {
     setChancePrompt(null);
   }
 
+  function addMomentToSequence() {
+    if (!match || !videoRef.current) return;
+
+    if (!activeSequenceId) {
+      alert("Kies eerst een sequentie bovenaan rechts.");
+      return;
+    }
+
+    if (!playerId) {
+      alert("Kies eerst een speler bovenaan rechts.");
+      return;
+    }
+
+    const now = videoRef.current.currentTime || 0;
+    const zoneToUse = fieldPosition ? inferZoneFromPosition(fieldPosition) : zone;
+
+    const base = {
+      matchId: match.id,
+      playerId,
+      teamId: match.homeTeamId,
+      time: now,
+      half: currentHalf,
+      phase: phase || "attack",
+      zone: zoneToUse,
+      actionType: "sequence_moment",
+      result: null,
+      opponentGoal: false,
+      customActionId: null,
+      sequenceId: activeSequenceId,
+      x: fieldPosition && typeof fieldPosition.x === "number" ? fieldPosition.x : null,
+      y: fieldPosition && typeof fieldPosition.y === "number" ? fieldPosition.y : null,
+      clubId: userClubId || null,
+    };
+
+    addClip(base);
+  }
+
   function playClip(c) {
     if (!videoRef.current) return;
     const start = Math.max(0, c.time - prePost.pre);
@@ -1301,6 +1338,19 @@ export default function MatchDetail() {
                 </option>
               ))}
             </select>
+            <div className="mt-3 flex flex-col gap-1">
+              <button
+                type="button"
+                onClick={addMomentToSequence}
+                className="px-3 py-2 rounded-xl bg-[#FF6124] text-white text-xs font-medium hover:opacity-90"
+              >
+                Moment aan sequentie toevoegen
+              </button>
+              <p className="text-[11px] text-neutral-400">
+                Gebruik dit om een moment in de gekozen sequentie te markeren op de huidige videotijd,
+                zonder een aparte actie te kiezen.
+              </p>
+            </div>
           </div>
 
           {/* VELDLOCATIE */}

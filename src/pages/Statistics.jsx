@@ -18,7 +18,7 @@ function fmt(t) {
 }
 
 export default function Statistics() {
-  const { teams = [], matches = [], clips = [], clipSequences = [] } = useAppData() || {};
+  const { teams = [], matches = [], clips = [], substitutions = [], clipSequences = [] } = useAppData() || {};
   const { currentUser } = useAuth();
 
   const [userClubId, setUserClubId] = useState("");
@@ -30,6 +30,9 @@ export default function Statistics() {
   const [selectedHalf, setSelectedHalf] = useState("all");
   const [selectedResult, setSelectedResult] = useState("all");
   const [selectedMatch, setSelectedMatch] = useState("all");
+
+  // Modus: eigen stats (voor) of tegenstander (tegen)
+  const [statsMode, setStatsMode] = useState("for"); // "for" | "against"
 
   // Vergelijking Speler A vs Speler B (+ optioneel C)
   const [comparePlayerA, setComparePlayerA] = useState("");
@@ -86,6 +89,12 @@ export default function Statistics() {
     if (!userClubId) return matches;
     return matches.filter((m) => !m.clubId || m.clubId === userClubId);
   }, [matches, userClubId]);
+
+  const subsForClub = useMemo(() => {
+    if (!matchesForClub.length) return [];
+    const matchIds = new Set(matchesForClub.map((m) => m.id));
+    return substitutions.filter((s) => matchIds.has(s.matchId));
+  }, [substitutions, matchesForClub]);
 
   const clipsForClub = useMemo(() => {
     if (!userClubId) return clips;
@@ -148,20 +157,71 @@ export default function Statistics() {
     });
   }, [enriched, selectedTeam, selectedPlayer, selectedZone, selectedAction, selectedHalf, selectedResult, selectedMatch]);
 
+  // Clips die daadwerkelijk voor de hoofdstatistieken gebruikt worden,
+  // afhankelijk van de gekozen modus (voor: eigen, tegen: opponent-clips)
+  const statsClips = useMemo(() => {
+    if (statsMode === "against") {
+      // Tegenmodus: alle tegengoal-clips, ook oudere varianten
+      return filtered.filter((c) => {
+        const isOppFlag = !!c.opponentGoal;
+        const isOppResult = c.result === "opp_goal";
+        const isOppAction = typeof c.actionType === "string" && c.actionType.startsWith("tegen_");
+        return isOppFlag || isOppResult || isOppAction;
+      });
+    }
+
+    // Standaard: eigen acties, dus opponent-clips uitsluiten
+    return filtered.filter((c) => {
+      const isOppFlag = !!c.opponentGoal;
+      const isOppResult = c.result === "opp_goal";
+      const isOppAction = typeof c.actionType === "string" && c.actionType.startsWith("tegen_");
+      return !(isOppFlag || isOppResult || isOppAction);
+    });
+  }, [filtered, statsMode]);
+
   const playerStats = useMemo(() => {
-    const shots = filtered.filter(c => c.actionType === "schot");
-    const goals = shots.filter(c => c.result === "goal");
-    const misses = shots.filter(c => c.result === "miss");
+    const isShot = (c) => c.actionType === "schot" || c.actionType === "tegen_schot";
+    const isChanceAction = (c) => [
+      "doorloopbal",
+      "kleine_kans",
+      "strafworp",
+      "vrije_bal",
+      "tegen_doorloopbal",
+      "tegen_kleine_kans",
+      "tegen_strafworp",
+      "tegen_vrije_bal",
+    ].includes(c.actionType);
+    const isGoal = (c) => c.result === "goal" || c.result === "opp_goal";
+    const isMiss = (c) => c.result === "miss" || c.result === "opp_miss";
 
-    const chanceShots = filtered.filter(c => ["doorloopbal","kleine_kans","strafworp","vrije_bal"].includes(c.actionType));
-    const chanceGoals = chanceShots.filter(c => c.result === "goal");
+    const shots = statsClips.filter(isShot);
+    const goals = shots.filter(isGoal);
+    const misses = shots.filter(isMiss);
 
-    const reboundsAttackWin = filtered.filter(c => c.actionType === "rebound_win").length;
-    const reboundsAttackLose = filtered.filter(c => c.actionType === "rebound_lose").length;
+    const chanceShots = statsClips.filter(isChanceAction);
+    const chanceGoals = chanceShots.filter(isGoal);
+
+    const countByType = (actions) => {
+      const list = statsClips.filter((c) => actions.includes(c.actionType));
+      const goalsType = list.filter(isGoal);
+      return {
+        attempts: list.length,
+        goals: goalsType.length,
+        fg: list.length ? Math.round((goalsType.length / list.length) * 100) : 0,
+      };
+    };
+
+    const doorloop = countByType(["doorloopbal", "tegen_doorloopbal"]);
+    const kleine = countByType(["kleine_kans", "tegen_kleine_kans"]);
+    const vrijeBal = countByType(["vrije_bal", "tegen_vrije_bal"]);
+    const strafworp = countByType(["strafworp", "tegen_strafworp"]);
+
+    const reboundsAttackWin = statsClips.filter(c => c.actionType === "rebound_win").length;
+    const reboundsAttackLose = statsClips.filter(c => c.actionType === "rebound_lose").length;
     const totalReboundsAttack = reboundsAttackWin + reboundsAttackLose;
 
-    const reboundsDefenseWin = filtered.filter(c => ["rebound_verdediging", "rebound_def_win"].includes(c.actionType)).length;
-    const reboundsDefenseLose = filtered.filter(c => c.actionType === "rebound_def_lose").length;
+    const reboundsDefenseWin = statsClips.filter(c => ["rebound_verdediging", "rebound_def_win"].includes(c.actionType)).length;
+    const reboundsDefenseLose = statsClips.filter(c => c.actionType === "rebound_def_lose").length;
     const totalReboundsDefense = reboundsDefenseWin + reboundsDefenseLose;
 
     return {
@@ -173,27 +233,31 @@ export default function Statistics() {
       chanceAttempts: chanceShots.length,
       chanceGoals: chanceGoals.length,
       chanceFg: chanceShots.length ? Math.round((chanceGoals.length / chanceShots.length) * 100) : 0,
-      assists: filtered.filter(c => c.actionType === "assist").length,
-      turnovers: filtered.filter(c => c.actionType === "balverlies").length,
-      fouls: filtered.filter(c => c.actionType === "overtreding").length,
-      defensiveDeflections: filtered.filter(c => c.actionType === "verdedigd").length,
-      interceptions: filtered.filter(c => ["onderschepping","overname"].includes(c.actionType)).length,
+      assists: statsClips.filter(c => c.actionType === "assist").length,
+      turnovers: statsClips.filter(c => c.actionType === "balverlies").length,
+      fouls: statsClips.filter(c => c.actionType === "overtreding").length,
+      defensiveDeflections: statsClips.filter(c => c.actionType === "verdedigd").length,
+      interceptions: statsClips.filter(c => ["onderschepping","overname"].includes(c.actionType)).length,
+      doorloop,
+      kleine,
+      vrijeBal,
+      strafworp,
       reboundsAttack: reboundsAttackWin,
       reboundsDefense: reboundsDefenseWin,
       totalRebounds: totalReboundsAttack + totalReboundsDefense,
       reboundAttackPct: totalReboundsAttack ? Math.round((reboundsAttackWin / totalReboundsAttack) * 100) : 0,
       reboundDefensePct: totalReboundsDefense ? Math.round((reboundsDefenseWin / totalReboundsDefense) * 100) : 0,
     };
-  }, [filtered]);
+  }, [statsClips]);
 
   const heatmap = useMemo(() => {
     const map = {};
     ZONES.forEach(z => map[z] = 0);
-    filtered.forEach(c => {
+    statsClips.forEach(c => {
       if (map[c.zone] !== undefined) map[c.zone]++;
     });
     return map;
-  }, [filtered]);
+  }, [statsClips]);
 
   const shotchart = useMemo(() => {
     const map = {};
@@ -201,10 +265,11 @@ export default function Statistics() {
       map[z] = { goal: 0, miss: 0, pct: 0 };
     });
 
-    filtered.forEach((c) => {
-      if (c.actionType === "schot" && map[c.zone]) {
-        if (c.result === "goal") map[c.zone].goal++;
-        if (c.result === "miss") map[c.zone].miss++;
+    statsClips.forEach((c) => {
+      const isShot = c.actionType === "schot" || c.actionType === "tegen_schot";
+      if (isShot && map[c.zone]) {
+        if (c.result === "goal" || c.result === "opp_goal") map[c.zone].goal++;
+        if (c.result === "miss" || c.result === "opp_miss") map[c.zone].miss++;
       }
     });
 
@@ -214,7 +279,7 @@ export default function Statistics() {
     });
 
     return map;
-  }, [filtered]);
+  }, [statsClips]);
 
   const allPlayers = [...new Set(teams.flatMap(t => [...(t.players || []), ...(t.subs || [])]).map(p => p.name))];
   const allTeams = [...new Set(teams.map(t => t.name))];
@@ -250,6 +315,7 @@ export default function Statistics() {
           turnovers: 0,
           interceptions: 0,
           fouls: 0,
+          switches: 0,
         };
       }
       return byPlayer[key];
@@ -284,6 +350,51 @@ export default function Statistics() {
       if (c.actionType === "overtreding") row.fouls += 1;
     });
 
+    // Wisselmomenten per speler (als uit of in), met dezelfde filters voor club/team/match/helft/speler
+    const teamFilterName = teamFilter;
+    const playerFilter = selectedPlayer !== "all" ? selectedPlayer : null;
+    const halfFilter = selectedHalf !== "all" ? selectedHalf : null;
+    const matchFilterName = selectedMatch !== "all" ? selectedMatch : null;
+
+    // Helper om van playerId naar { name, teamName } te gaan
+    const playerMetaById = new Map();
+    teams.forEach((t) => {
+      const all = [...(t.players || []), ...(t.subs || [])];
+      all.forEach((p) => {
+        if (!p?.id) return;
+        playerMetaById.set(p.id, { name: p.name || "Onbekend", teamName: t.name || null });
+      });
+    });
+
+    const matchNameById = new Map();
+    matchesForClub.forEach((m) => {
+      const home = teams.find((t) => t.id === m.homeTeamId);
+      const away = teams.find((t) => t.id === m.awayTeamId);
+      const datePart = m.date || "Onbekende datum";
+      const homeName = home?.name || m.homeTeamId;
+      const awayName = away?.name || m.awayTeamId;
+      matchNameById.set(m.id, `${datePart} — ${homeName} vs ${awayName}`);
+    });
+
+    subsForClub.forEach((s) => {
+      const matchName = matchNameById.get(s.matchId) || null;
+      if (matchFilterName && matchName !== matchFilterName) return;
+      if (halfFilter && String(s.half || "") !== halfFilter) return;
+
+      ["outPlayer", "inPlayer"].forEach((field) => {
+        const pid = s[field];
+        if (!pid) return;
+        const meta = playerMetaById.get(pid);
+        if (!meta) return;
+
+        if (teamFilterName && meta.teamName && meta.teamName !== teamFilterName) return;
+        if (playerFilter && meta.name !== playerFilter) return;
+
+        const row = ensure(meta.name || "Onbekend");
+        row.switches += 1;
+      });
+    });
+
     const rows = Object.values(byPlayer).sort((a, b) => a.player.localeCompare(b.player));
 
     const total = rows.reduce(
@@ -298,6 +409,7 @@ export default function Statistics() {
         turnovers: acc.turnovers + r.turnovers,
         interceptions: acc.interceptions + r.interceptions,
         fouls: acc.fouls + r.fouls,
+        switches: acc.switches + (r.switches || 0),
       }),
       {
         player: "Totaal",
@@ -310,11 +422,12 @@ export default function Statistics() {
         turnovers: 0,
         interceptions: 0,
         fouls: 0,
+        switches: 0,
       }
     );
 
     return { rows, total };
-  }, [filtered, selectedTeam]);
+  }, [filtered, selectedTeam, subsForClub, teams, matchesForClub, selectedPlayer, selectedHalf, selectedMatch]);
 
   // Hulp: zoek stats voor een specifieke spelernaam binnen de perPlayerStats.rows
   const compareRows = useMemo(() => {
@@ -380,7 +493,7 @@ export default function Statistics() {
     });
 
     return byMatch;
-  }, [filtered]);
+  }, [statsClips]);
 
   const compareMatches = useMemo(() => {
     const a = compareMatchA ? perMatchStats[compareMatchA] || null : null;
@@ -475,7 +588,58 @@ export default function Statistics() {
 
   return (
     <div className="p-6 space-y-6">
-      <h2 className="text-2xl font-semibold">Statistieken</h2>
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 sm:gap-4">
+        <h2 className="text-2xl font-semibold">Statistieken</h2>
+        <button
+          onClick={() => {
+            // Exporteer alle gefilterde clips met zo compleet mogelijke info
+            const header = [
+              "id",
+              "match",
+              "team",
+              "player",
+              "actionType",
+              "result",
+              "half",
+              "time_sec",
+              "time_mmss",
+              "zone",
+              "x",
+              "y",
+              "sequenceId",
+            ];
+
+            const rows = [header].concat(
+              filtered.map((c) => [
+                c.id || "",
+                c.matchName || "",
+                c.team || "",
+                c.player || "",
+                c.actionType || "",
+                c.result || "",
+                c.half ?? "",
+                c.time ?? "",
+                fmt(c.time ?? 0),
+                c.zone || "",
+                typeof c.x === "number" ? c.x.toFixed(3) : "",
+                typeof c.y === "number" ? c.y.toFixed(3) : "",
+                c.sequenceId || "",
+              ])
+            );
+            const csv = rows.map(r => r.join(",")).join("\n");
+            const blob = new Blob([csv], { type: "text/csv" });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement("a");
+            a.href = url;
+            a.download = "stats_export.csv";
+            a.click();
+            URL.revokeObjectURL(url);
+          }}
+          className="bg-[#FF6124] text-white px-4 py-2 rounded-xl text-sm font-medium self-start sm:self-auto"
+        >
+          Exporteer CSV
+        </button>
+      </div>
 
       <div className="bg-[#FF6124]/10 border border-[#FF6124]/40 p-4 rounded-2xl shadow-[0_0_0_1px_rgba(0,0,0,0.4)]">
         <h3 className="text-sm font-semibold text-[#FF6124] mb-3 tracking-wide">Filters</h3>
@@ -503,73 +667,108 @@ export default function Statistics() {
             ]}
           />
         </div>
+        <div className="mt-4 flex justify-end">
+          <div className="inline-flex rounded-2xl border border-neutral-700 bg-neutral-900 overflow-hidden text-sm shadow-sm">
+            <button
+              type="button"
+              onClick={() => setStatsMode("for")}
+              className={`px-4 py-2 font-semibold tracking-wide uppercase ${
+                statsMode === "for"
+                  ? "bg-[#FF6124] text-white"
+                  : "text-neutral-200 hover:bg-neutral-800"
+              }`}
+            >
+              Voor
+            </button>
+            <button
+              type="button"
+              onClick={() => setStatsMode("against")}
+              className={`px-4 py-2 font-semibold tracking-wide uppercase border-l border-neutral-700 ${
+                statsMode === "against"
+                  ? "bg-[#FF6124] text-white"
+                  : "text-neutral-200 hover:bg-neutral-800"
+              }`}
+            >
+              Tegen
+            </button>
+          </div>
+        </div>
       </div>
 
-      <button
-        onClick={() => {
-          // Exporteer alle gefilterde clips met zo compleet mogelijke info
-          const header = [
-            "id",
-            "match",
-            "team",
-            "player",
-            "actionType",
-            "result",
-            "half",
-            "time_sec",
-            "time_mmss",
-            "zone",
-            "x",
-            "y",
-            "sequenceId",
-          ];
-
-          const rows = [header].concat(
-            filtered.map((c) => [
-              c.id || "",
-              c.matchName || "",
-              c.team || "",
-              c.player || "",
-              c.actionType || "",
-              c.result || "",
-              c.half ?? "",
-              c.time ?? "",
-              fmt(c.time ?? 0),
-              c.zone || "",
-              typeof c.x === "number" ? c.x.toFixed(3) : "",
-              typeof c.y === "number" ? c.y.toFixed(3) : "",
-              c.sequenceId || "",
-            ])
-          );
-          const csv = rows.map(r => r.join(",")).join("\n");
-          const blob = new Blob([csv], { type: "text/csv" });
-          const url = URL.createObjectURL(blob);
-          const a = document.createElement("a");
-          a.href = url;
-          a.download = "stats_export.csv";
-          a.click();
-          URL.revokeObjectURL(url);
-        }}
-        className="bg-[#FF6124] text-white px-4 py-2 rounded-xl"
-      >
-        Exporteer CSV
-      </button>
-
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-        <StatCard title="Schoten" value={playerStats.totalShots} />
-        <StatCard title="Goals" value={playerStats.goals} color="#FF6124" />
-        <StatCard title="Missers" value={playerStats.misses} color="#dc2626" />
-        <StatCard title="Raak% schoten" value={`${playerStats.fg}%`} color="#FF6124" />
-        <StatCard title="Mis% schoten" value={`${playerStats.missPct}%`} color="#dc2626" />
-        <StatCard title="Raak% overige kansen" value={`${playerStats.chanceFg}%`} color="#22c55e"/>
-        <StatCard title="Assists" value={playerStats.assists} />
-        <StatCard title="Balverlies" value={playerStats.turnovers} />
-        <StatCard title="Overtredingen" value={playerStats.fouls} />
-        <StatCard title="Ondersch. / Overnames" value={playerStats.interceptions} />
-        <StatCard title="Rebound Aanv.%"
-          value={`${playerStats.reboundAttackPct}%`} />
-        <StatCard title="Rebound Verd.%"
-          value={`${playerStats.reboundDefensePct}%`} />
+        <StatCard
+          title={statsMode === "for" ? "Schoten" : "Tegenschoten"}
+          value={playerStats.totalShots}
+        />
+        <StatCard
+          title={statsMode === "for" ? "Goals" : "Tegengoals"}
+          value={playerStats.goals}
+          color="#FF6124"
+        />
+        <StatCard
+          title={statsMode === "for" ? "Missers" : "Gemiste tegenschoten"}
+          value={playerStats.misses}
+          color="#dc2626"
+        />
+        <StatCard
+          title={statsMode === "for" ? "Raak% overige kansen" : "Raak% tegenkansen"}
+          value={`${playerStats.chanceFg}%`}
+          color="#22c55e"
+        />
+        <StatCard
+          title={statsMode === "for" ? "Raak% schoten" : "Raak% tegenschoten"}
+          value={`${playerStats.fg}%`}
+          color="#FF6124"
+        />
+        <StatCard
+          title={statsMode === "for" ? "Mis% schoten" : "Mis% tegenschoten"}
+          value={`${playerStats.missPct}%`}
+          color="#dc2626"
+        />
+
+        {statsMode === "for" ? (
+          <>
+            <StatCard title="Assists" value={playerStats.assists} />
+            <StatCard title="Balverlies" value={playerStats.turnovers} />
+            <StatCard title="Overtredingen" value={playerStats.fouls} />
+            <StatCard title="Ondersch. / Overnames" value={playerStats.interceptions} />
+            <StatCard
+              title="Rebound Aanv.%"
+              value={`${playerStats.reboundAttackPct}%`}
+            />
+            <StatCard
+              title="Rebound Verd.%"
+              value={`${playerStats.reboundDefensePct}%`}
+            />
+          </>
+        ) : (
+          <>
+            <StatCard
+              title="Doorloopballen tegen (raak/pogingen, %)"
+              value={`${playerStats.doorloop.goals}/${playerStats.doorloop.attempts} (${playerStats.doorloop.fg}%)`}
+            />
+            <StatCard
+              title="Kleine kansen tegen (raak/pogingen, %)"
+              value={`${playerStats.kleine.goals}/${playerStats.kleine.attempts} (${playerStats.kleine.fg}%)`}
+            />
+            <StatCard
+              title="Vrije ballen tegen (raak/pogingen, %)"
+              value={`${playerStats.vrijeBal.goals}/${playerStats.vrijeBal.attempts} (${playerStats.vrijeBal.fg}%)`}
+            />
+            <StatCard
+              title="Strafworpen tegen (raak/pogingen, %)"
+              value={`${playerStats.strafworp.goals}/${playerStats.strafworp.attempts} (${playerStats.strafworp.fg}%)`}
+            />
+            <StatCard
+              title="Totaal kansen tegen"
+              value={playerStats.chanceAttempts}
+            />
+            <StatCard
+              title="Totaal acties tegen"
+              value={statsClips.length}
+            />
+          </>
+        )}
       </div>
 
       <ShotChartView data={shotchart} />
@@ -1170,6 +1369,7 @@ function PlayerStatsTable({ rows, total }) {
             <th className="text-center px-3">Balverlies</th>
             <th className="text-center px-3">Ondersch./Overn.</th>
             <th className="text-center px-3">Overtredingen</th>
+            <th className="text-center px-3">Wissels</th>
           </tr>
         </thead>
         <tbody>
@@ -1233,6 +1433,9 @@ function PlayerStatsTable({ rows, total }) {
 
                 {/* Overtredingen */}
                 <td className="text-center px-3 text-yellow-400">{r.fouls || 0}</td>
+
+                {/* Wissels */}
+                <td className="text-center px-3 text-neutral-200">{r.switches || 0}</td>
               </tr>
             );
           })}

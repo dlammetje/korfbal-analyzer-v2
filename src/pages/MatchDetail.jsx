@@ -117,6 +117,11 @@ export default function MatchDetail() {
 
   const [fieldPosition, setFieldPosition] = useState(null);
 
+  // Wissel-state / videoklok
+  const [videoTime, setVideoTime] = useState(0);
+  const [subOutId, setSubOutId] = useState("");
+  const [subInId, setSubInId] = useState("");
+
   // --- Clip filters ---
   const [clipPlayerFilter, setClipPlayerFilter] = useState("");
   const [clipFavoritesOnly, setClipFavoritesOnly] = useState(false);
@@ -162,26 +167,13 @@ export default function MatchDetail() {
     };
   }, [currentUser]);
 
-  // players voor deze match (basisspelers + wissels)
+  // spelers voor deze match: alle spelers die bij de teams horen
   const matchPlayers = useMemo(() => {
     if (!match || !getTeamPlayers) return [];
 
-    const ids = [
-      ...(match.players || []),
-      ...(match.subs || []),
-    ];
-
     const homePlayers = getTeamPlayers(match.homeTeamId) || [];
     const awayPlayers = getTeamPlayers(match.awayTeamId) || [];
-    const pool = [...homePlayers, ...awayPlayers];
-
-    const filtered = pool.filter((p) => ids.includes(p.id));
-
-    // fallback: als ids leeg zijn (oude wedstrijden), gebruik gewoon alle spelers van beide teams
-    if (!filtered.length) {
-      return pool;
-    }
-    return filtered;
+    return [...homePlayers, ...awayPlayers];
   }, [match, getTeamPlayers]);
 
   const clips = useMemo(
@@ -193,6 +185,65 @@ export default function MatchDetail() {
     () => (match ? getSubsByMatch(match.id) : []),
     [match, getSubsByMatch]
   );
+
+  // Huidige opstelling op basis van basis-8 (match.players), bank (alle overige teamspelers) en wissels t/m huidige videotijd
+  const lineup = useMemo(() => {
+    if (!match || !matchPlayers.length) {
+      return { onField: [], bench: [] };
+    }
+
+    const startingIds = new Set(match.players || []);
+
+    // Alle spelers die bij de teams horen
+    const allIds = new Set(matchPlayers.map((p) => p.id));
+
+    // Startopstelling: basis 8; bank: alle overige spelers
+    const onField = new Set(startingIds);
+    const bench = new Set(
+      Array.from(allIds).filter((id) => !startingIds.has(id))
+    );
+
+    if (!subs || !subs.length) {
+      const onFieldPlayers = matchPlayers.filter((p) => onField.has(p.id));
+      const benchPlayers = matchPlayers.filter((p) => bench.has(p.id));
+      return { onField: onFieldPlayers, bench: benchPlayers };
+    }
+
+    const orderedSubs = [...subs].sort((a, b) => {
+      const ha = a.half || 1;
+      const hb = b.half || 1;
+      if (ha !== hb) return ha - hb;
+      return (a.time || 0) - (b.time || 0);
+    });
+
+    const currentHalfLocal = currentHalf || 1;
+    const currentTimeLocal = videoTime || 0;
+
+    for (const s of orderedSubs) {
+      const sh = s.half || 1;
+      const st = s.time || 0;
+
+      if (sh < currentHalfLocal || (sh === currentHalfLocal && st <= currentTimeLocal)) {
+        if (s.outPlayer && onField.has(s.outPlayer)) {
+          onField.delete(s.outPlayer);
+          bench.add(s.outPlayer);
+        }
+        if (s.inPlayer) {
+          bench.delete(s.inPlayer);
+          onField.add(s.inPlayer);
+        }
+      } else {
+        break;
+      }
+    }
+
+    const onFieldPlayers = matchPlayers.filter((p) => onField.has(p.id));
+    const benchPlayers = matchPlayers.filter((p) => bench.has(p.id));
+    return { onField: onFieldPlayers, bench: benchPlayers };
+  }, [match, matchPlayers, subs, currentHalf, videoTime]);
+
+  const onFieldPlayers = lineup.onField;
+  const benchPlayers = lineup.bench;
 
   // gefilterde clips op basis van speler-/actie-/favorieten-filter
   const filteredClips = useMemo(() => {
@@ -442,13 +493,15 @@ export default function MatchDetail() {
         return;
       }
 
-      if (key === "g" || key === "G") {
+      // Sneltoets voor tegenstander-schot alleen in verdedigingsfase
+      if ((key === "g" || key === "G") && phase === "defense") {
         const opp = OPPONENT_GOALS[0];
         if (opp) {
           handleAction(opp, true, null);
         }
         return;
       }
+
     }
 
     window.addEventListener("keydown", handleKeyDown);
@@ -707,6 +760,19 @@ export default function MatchDetail() {
     video.addEventListener("timeupdate", handleTimeUpdate);
     return () => video.removeEventListener("timeupdate", handleTimeUpdate);
   }, [playlistActive, playlistIndex, playlistClips, prePost.post]);
+
+  // Houd de huidige videotijd bij voor de wissel-opstelling
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video) return;
+
+    function handleTime() {
+      setVideoTime(video.currentTime || 0);
+    }
+
+    video.addEventListener("timeupdate", handleTime);
+    return () => video.removeEventListener("timeupdate", handleTime);
+  }, []);
 
   function submitSub(outId, inId) {
     if (!match || !videoRef.current) return;
@@ -1319,6 +1385,20 @@ export default function MatchDetail() {
                 </option>
               ))}
             </select>
+
+            <div className="mt-3 flex flex-col gap-1">
+              <button
+                type="button"
+                onClick={addMomentToSequence}
+                className="px-3 py-2 rounded-xl bg-[#FF6124] text-white text-xs font-medium hover:opacity-90"
+              >
+                Moment aan sequentie toevoegen
+              </button>
+              <p className="text-[11px] text-neutral-400">
+                Gebruik dit om een moment in de gekozen sequentie te markeren op de huidige videotijd,
+                zonder een aparte actie te kiezen.
+              </p>
+            </div>
           </div>
 
           {/* PLAYER SELECT */}
@@ -1338,19 +1418,6 @@ export default function MatchDetail() {
                 </option>
               ))}
             </select>
-            <div className="mt-3 flex flex-col gap-1">
-              <button
-                type="button"
-                onClick={addMomentToSequence}
-                className="px-3 py-2 rounded-xl bg-[#FF6124] text-white text-xs font-medium hover:opacity-90"
-              >
-                Moment aan sequentie toevoegen
-              </button>
-              <p className="text-[11px] text-neutral-400">
-                Gebruik dit om een moment in de gekozen sequentie te markeren op de huidige videotijd,
-                zonder een aparte actie te kiezen.
-              </p>
-            </div>
           </div>
 
           {/* VELDLOCATIE */}
@@ -1391,38 +1458,146 @@ export default function MatchDetail() {
           </div>
 
           {/* ACTIONS */}
-          <div>
-            <h3 className="text-neutral-300 text-sm mb-2">
-              {phase === "attack" ? "Aanvalsacties" : "Verdedigingsacties"}
-            </h3>
-            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-              {(phase === "attack" ? ATTACK_ACTIONS : DEFENSE_ACTIONS).map((a) => (
-                <button
-                  key={a.id}
-                  onClick={() => handleAction(a)}
-                  className="rounded-xl border border-neutral-700 bg-neutral-900 hover:bg-[#FF6124]/10 text-sm px-3 py-2"
+          <div className="space-y-4">
+            <div>
+              <h3 className="text-neutral-300 text-sm mb-2">
+                {phase === "attack" ? "Aanvalsacties" : "Verdedigingsacties"}
+              </h3>
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                {(phase === "attack" ? ATTACK_ACTIONS : DEFENSE_ACTIONS).map((a) => (
+                  <button
+                    key={a.id}
+                    onClick={() => handleAction(a, false)}
+                    className="rounded-xl border border-neutral-700 bg-neutral-900 hover:bg-[#FF6124]/10 text-sm px-3 py-2"
+                  >
+                    {a.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {phase === "defense" && (
+              <div>
+                <h3 className="text-neutral-300 text-sm mb-2">Tegenstander goals</h3>
+                <div className="grid grid-cols-2 sm:grid-cols-2 gap-2">
+                  {OPPONENT_GOALS.map((a) => (
+                    <button
+                      key={a.id}
+                      onClick={() => handleAction(a, true)}
+                      className="rounded-xl border-2 border-red-600 text-red-400 bg-neutral-900 hover:bg-red-900/20 text-sm px-3 py-2"
+                    >
+                      {a.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* WISSELS ONDERAAN */}
+          <div className="bg-[#FF6124]/10 border border-[#FF6124]/40 rounded-2xl p-3 space-y-3 shadow-[0_0_0_1px_rgba(0,0,0,0.4)]">
+            <div className="flex items-center justify-between gap-2">
+              <h3 className="text-sm font-semibold text-[#FF6124] tracking-wide">Wissels</h3>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-2 items-end text-xs">
+              <div>
+                <label className="text-[11px] text-neutral-300 block mb-1">Speler uit</label>
+                <select
+                  value={subOutId}
+                  onChange={(e) => setSubOutId(e.target.value)}
+                  className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-2 py-1.5 text-xs text-neutral-100"
                 >
-                  {a.label}
-                </button>
-              ))}
+                  <option value="">— kies speler —</option>
+                  {onFieldPlayers.map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.number ? `#${p.number} ` : ""}{p.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="text-[11px] text-neutral-300 block mb-1">Speler in</label>
+                <select
+                  value={subInId}
+                  onChange={(e) => setSubInId(e.target.value)}
+                  className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-2 py-1.5 text-xs text-neutral-100"
+                >
+                  <option value="">— kies speler —</option>
+                  {benchPlayers.map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.number ? `#${p.number} ` : ""}{p.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            <div className="flex justify-end mt-1">
+              <button
+                type="button"
+                onClick={() => {
+                  if (!subOutId || !subInId || subOutId === subInId) {
+                    alert("Kies een speler uit het veld en een andere speler van de bank.");
+                    return;
+                  }
+                  submitSub(subOutId, subInId);
+                  setSubOutId("");
+                  setSubInId("");
+                }}
+                className="px-3 py-1.5 rounded-xl bg-[#FF6124] text-white text-xs font-semibold hover:opacity-90"
+              >
+                Wissel opslaan
+              </button>
+            </div>
+
+            <div className="border-t border-[#FF6124]/40 pt-2 mt-1 space-y-1">
+              <div className="text-[11px] text-neutral-300 mb-1">Wisselgeschiedenis</div>
+              {subs && subs.length ? (
+                <div className="max-h-40 overflow-y-auto text-[11px]">
+                  {[...subs]
+                    .sort((a, b) => {
+                      const ha = a.half || 1;
+                      const hb = b.half || 1;
+                      if (ha !== hb) return ha - hb;
+                      return (a.time || 0) - (b.time || 0);
+                    })
+                    .map((s) => {
+                      const outP = matchPlayers.find((p) => p.id === s.outPlayer);
+                      const inP = matchPlayers.find((p) => p.id === s.inPlayer);
+                      return (
+                        <div
+                          key={s.id}
+                          className="flex items-center justify-between gap-2 py-0.5 border-b border-neutral-900 last:border-b-0"
+                        >
+                          <div className="flex flex-col">
+                            <span className="text-neutral-300">
+                              {fmt(s.time || 0)} · {s.half || 1}e helft
+                            </span>
+                            <span className="text-neutral-400">
+                              {outP ? `${outP.number ? `#${outP.number} ` : ""}${outP.name}` : "?"}
+                              {"  ᐸᐳ "}
+                              {inP ? `${inP.number ? `#${inP.number} ` : ""}${inP.name}` : "?"}
+                            </span>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => deleteSubstitution && s.id && deleteSubstitution(s.id)}
+                            className="text-[10px] px-2 py-0.5 rounded-lg border border-red-700 text-red-400 hover:bg-red-900/30"
+                          >
+                            Verwijder
+                          </button>
+                        </div>
+                      );
+                    })}
+                </div>
+              ) : (
+                <div className="text-[11px] text-neutral-600">Nog geen wissels geregistreerd.</div>
+              )}
             </div>
           </div>
 
-          {/* OPPONENT GOALS */}
-          <div>
-            <h3 className="text-neutral-300 text-sm mb-2">Tegenstander goals</h3>
-            <div className="grid grid-cols-2 sm:grid-cols-2 gap-2">
-              {OPPONENT_GOALS.map((a) => (
-                <button
-                  key={a.id}
-                  onClick={() => handleAction(a, true)}
-                  className="rounded-xl border-2 border-red-600 text-red-400 bg-neutral-900 hover:bg-red-900/20 text-sm px-3 py-2"
-                >
-                  {a.label}
-                </button>
-              ))}
-            </div>
-          </div>
         </div>
       </div>
 

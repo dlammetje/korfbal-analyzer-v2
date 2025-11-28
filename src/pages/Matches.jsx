@@ -1,6 +1,6 @@
 // src/pages/Matches.jsx
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { Play, Pause, Upload, ChevronLeft, ChevronRight, Plus, Trash2 } from "lucide-react";
+import { Play, Pause, Upload, ChevronLeft, ChevronRight, Plus, Trash2, FileText } from "lucide-react";
 import { useAppData } from "../context/AppDataContext";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
@@ -88,8 +88,7 @@ export default function Matches() {
     awayTeamId: "",
     homeScore: "",
     awayScore: "",
-    players: [],
-    subs: [],
+    players: [], // basis 8; bank wordt automatisch bepaald uit teamspelers - basis 8
     videoUrls: { half1: "", half2: "" },
   });
 
@@ -102,6 +101,17 @@ export default function Matches() {
     () => matches.find((m) => m.id === selectedMatchId) || null,
     [matches, selectedMatchId]
   );
+
+  // Bewerkbare spelers voor geselecteerde wedstrijd
+  const [editPlayers, setEditPlayers] = useState([]);
+
+  useEffect(() => {
+    if (!selectedMatch) {
+      setEditPlayers([]);
+      return;
+    }
+    setEditPlayers(selectedMatch.players || []);
+  }, [selectedMatch]);
 
   const [preferredTeamId, setPreferredTeamId] = useState("");
   const [userClubId, setUserClubId] = useState("");
@@ -172,6 +182,15 @@ export default function Matches() {
   const [chancePrompt, setChancePrompt] = useState(null);
 
   const [subPrompt, setSubPrompt] = useState(null);
+
+  // Notes per wedstrijd (voor nu alleen in lokale state)
+  const [notesModalMatchId, setNotesModalMatchId] = useState("");
+  const [notesDraft, setNotesDraft] = useState({
+    title: "",
+    type: "leermoment",
+    text: "",
+  });
+  const [notesByMatch, setNotesByMatch] = useState({}); // { [matchId]: [{ id, title, type, text, likes, createdAt }] }
 
   // --- Sequentie playlist modal state ---
   const [sequenceModalMatchId, setSequenceModalMatchId] = useState("");
@@ -287,6 +306,11 @@ export default function Matches() {
     return;
   }
 
+  if (!Array.isArray(newMatch.players) || newMatch.players.length !== 8) {
+    alert("Selecteer precies 8 basisspelers voor deze wedstrijd.");
+    return;
+  }
+
   try {
     console.log("➡️ Nieuwe wedstrijd opslaan:", newMatch);
 
@@ -311,7 +335,6 @@ export default function Matches() {
       homeScore: "",
       awayScore: "",
       players: [],
-      subs: [],
       videoUrls: { half1: "", half2: "" },
     });
 
@@ -463,29 +486,16 @@ export default function Matches() {
             </div>
           </div>
 
-          {/* PLAYERS */}
+          {/* PLAYERS: kies precies 8 basisspelers; rest wordt bank */}
           <div className="md:col-span-3">
-            <label className="text-xs text-neutral-400 mb-1">Basisspelers</label>
+            <label className="text-xs text-neutral-400 mb-1">Basisspelers (selecteer 8)</label>
             <PlayersPicker
               teams={teams}
               homeTeamId={newMatch.homeTeamId}
               awayTeamId={newMatch.awayTeamId}
               selected={newMatch.players}
               onChange={ids => setNewMatch(m => ({ ...m, players: ids }))}
-              type="players"
-            />
-          </div>
-
-          {/* SUBS */}
-          <div className="md:col-span-3">
-            <label className="text-xs text-neutral-400 mb-1">Wissels</label>
-            <PlayersPicker
-              teams={teams}
-              homeTeamId={newMatch.homeTeamId}
-              awayTeamId={newMatch.awayTeamId}
-              selected={newMatch.subs}
-              onChange={ids => setNewMatch(m => ({ ...m, subs: ids }))}
-              type="subs"
+              type="all"
             />
           </div>
         </div>
@@ -595,6 +605,17 @@ export default function Matches() {
                       <button
                         onClick={(e) => {
                           e.stopPropagation();
+                          setNotesModalMatchId(m.id);
+                        }}
+                        className="p-2 rounded-lg border border-neutral-600 text-neutral-200 hover:border-[#FF6124] hover:text-[#FF6124]"
+                        title="Notes"
+                      >
+                        <FileText size={14} />
+                      </button>
+
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
                           if (confirm("Weet je zeker dat je deze wedstrijd wilt verwijderen?")) {
                             deleteMatch(m.id);
                           }
@@ -609,6 +630,51 @@ export default function Matches() {
               })}
             </tbody>
           </table>
+        )}
+
+        {selectedMatch && (
+          <div className="mt-4 border-t border-neutral-800 pt-4 space-y-3">
+            <h4 className="text-sm font-semibold text-neutral-100">
+              Opstelling voor geselecteerde wedstrijd (basis 8)
+            </h4>
+
+            <div className="grid grid-cols-1 gap-3">
+              <div>
+                <label className="text-xs text-neutral-400 mb-1 block">Basisspelers (selecteer 8)</label>
+                <PlayersPicker
+                  teams={teams}
+                  homeTeamId={selectedMatch.homeTeamId}
+                  awayTeamId={selectedMatch.awayTeamId}
+                  selected={editPlayers}
+                  onChange={setEditPlayers}
+                  type="all"
+                />
+              </div>
+            </div>
+
+            <div className="flex justify-end">
+              <button
+                onClick={async () => {
+                  try {
+                    if (!Array.isArray(editPlayers) || editPlayers.length !== 8) {
+                      alert("Selecteer precies 8 basisspelers voor deze wedstrijd.");
+                      return;
+                    }
+                    await updateMatch(selectedMatch.id, {
+                      players: editPlayers,
+                    });
+                    alert("Basisspelers opgeslagen voor deze wedstrijd. Bankspelers worden automatisch bepaald uit de overige teamleden.");
+                  } catch (e) {
+                    console.error("Fout bij opslaan basisspelers/wissels:", e);
+                    alert("Opslaan mislukt, zie console voor details.");
+                  }
+                }}
+                className="mt-2 px-4 py-2 rounded-xl bg-[#FF6124] text-white text-xs font-medium hover:opacity-90"
+              >
+                Opslaan voor deze wedstrijd
+              </button>
+            </div>
+          </div>
         )}
 
       {/* Sequentie-playlist modal */}
@@ -765,6 +831,178 @@ export default function Matches() {
       )}
       </div>
 
+      {/* NOTES MODAL PER WEDSTRIJD */}
+      {notesModalMatchId && (
+        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 px-4">
+          <div className="bg-neutral-900 border border-neutral-800 rounded-2xl p-6 w-full max-w-3xl space-y-5 max-h-[90vh] overflow-y-auto">
+            <div className="flex justify-between items-center mb-2">
+              <h3 className="text-lg font-semibold text-neutral-100">Notes</h3>
+              <button
+                onClick={() => {
+                  setNotesModalMatchId("");
+                  setNotesDraft({ title: "", type: "leermoment", text: "" });
+                }}
+                className="text-neutral-400 hover:text-white text-sm"
+              >
+                Sluiten
+              </button>
+            </div>
+
+            <div className="space-y-3">
+              <div>
+                <label className="text-xs text-neutral-400 block mb-1">Titel</label>
+                <input
+                  type="text"
+                  value={notesDraft.title}
+                  onChange={(e) => setNotesDraft((d) => ({ ...d, title: e.target.value }))}
+                  className="w-full bg-neutral-800 border border-neutral-700 rounded-xl px-3 py-2 text-sm text-neutral-100"
+                  placeholder="Bijv. Sneller terug in organisatie"
+                />
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-3 items-start">
+                <div>
+                  <label className="text-xs text-neutral-400 block mb-1">Type</label>
+                  <select
+                    value={notesDraft.type}
+                    onChange={(e) => setNotesDraft((d) => ({ ...d, type: e.target.value }))}
+                    className="w-full bg-neutral-800 border border-neutral-700 rounded-xl px-3 py-2 text-sm text-neutral-100"
+                  >
+                    <option value="leermoment">Leermoment</option>
+                    <option value="beter_kan">Dingen die beter kunnen</option>
+                    <option value="compliment">Compliment</option>
+                  </select>
+                </div>
+
+                <div className="md:col-span-2">
+                  <label className="text-xs text-neutral-400 block mb-1">Beschrijving</label>
+                  <textarea
+                    rows={4}
+                    value={notesDraft.text}
+                    onChange={(e) => setNotesDraft((d) => ({ ...d, text: e.target.value }))}
+                    className="w-full bg-neutral-800 border border-neutral-700 rounded-xl px-3 py-2 text-sm text-neutral-100 resize-none"
+                    placeholder="Omschrijf kort wat je wilt meegeven aan het team."
+                  />
+                </div>
+              </div>
+
+              <div className="flex justify-end">
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (!notesDraft.title.trim() && !notesDraft.text.trim()) {
+                      alert("Vul minimaal een titel of beschrijving in.");
+                      return;
+                    }
+                    const id = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+                    setNotesByMatch((prev) => {
+                      const list = prev[notesModalMatchId] || [];
+                      return {
+                        ...prev,
+                        [notesModalMatchId]: [
+                          {
+                            id,
+                            title: notesDraft.title.trim() || "(zonder titel)",
+                            type: notesDraft.type,
+                            text: notesDraft.text.trim(),
+                            likes: 0,
+                            createdAt: new Date().toISOString(),
+                          },
+                          ...list,
+                        ],
+                      };
+                    });
+                    setNotesDraft({ title: "", type: "leermoment", text: "" });
+                  }}
+                  className="px-4 py-2 rounded-xl bg-[#FF6124] text-white text-sm font-medium hover:opacity-90"
+                >
+                  Opslaan
+                </button>
+              </div>
+            </div>
+
+            <div className="border-t border-neutral-800 pt-3 mt-2 space-y-2">
+              <h4 className="text-sm font-semibold text-neutral-200">Bestaande notes</h4>
+              {!(notesByMatch[notesModalMatchId] || []).length ? (
+                <div className="text-xs text-neutral-500">
+                  Nog geen notes voor deze wedstrijd.
+                </div>
+              ) : (
+                <div className="space-y-2 max-h-72 overflow-y-auto">
+                  {(notesByMatch[notesModalMatchId] || []).map((n) => (
+                    <div
+                      key={n.id}
+                      className="border border-neutral-800 rounded-xl px-3 py-2 text-sm flex items-start gap-3"
+                    >
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 mb-1">
+                          <span className="text-xs uppercase tracking-wide text-[#FF6124]">
+                            {n.type === "leermoment"
+                              ? "Leermoment"
+                              : n.type === "beter_kan"
+                              ? "Beter kan"
+                              : "Compliment"}
+                          </span>
+                          <span className="text-xs text-neutral-500">
+                            {new Date(n.createdAt).toLocaleString("nl-NL", {
+                              dateStyle: "short",
+                              timeStyle: "short",
+                            })}
+                          </span>
+                        </div>
+                        <div className="font-medium text-neutral-100 text-sm">
+                          {n.title}
+                        </div>
+                        {n.text && (
+                          <div className="text-xs text-neutral-300 mt-1 whitespace-pre-line">
+                            {n.text}
+                          </div>
+                        )}
+                      </div>
+                      <div className="flex flex-col items-stretch gap-1">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setNotesByMatch((prev) => {
+                              const list = prev[notesModalMatchId] || [];
+                              return {
+                                ...prev,
+                                [notesModalMatchId]: list.map((x) =>
+                                  x.id === n.id ? { ...x, likes: (x.likes || 0) + 1 } : x
+                                ),
+                              };
+                            });
+                          }}
+                          className="flex flex-col items-center justify-center text-xs px-2 py-1 rounded-lg border border-neutral-700 text-neutral-300 hover:border-[#FF6124] hover:text-[#FF6124]"
+                        >
+                          <span>♥</span>
+                          <span className="mt-0.5 text-[10px]">{n.likes || 0}</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setNotesByMatch((prev) => {
+                              const list = prev[notesModalMatchId] || [];
+                              return {
+                                ...prev,
+                                [notesModalMatchId]: list.filter((x) => x.id !== n.id),
+                              };
+                            });
+                          }}
+                          className="text-[10px] px-2 py-1 rounded-lg border border-red-700 text-red-400 hover:bg-red-900/30"
+                        >
+                          Verwijder
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
       {chancePrompt && (
         <div className="fixed inset-0 bg-black/70 flex items-center justify-center">
           <div className="bg-neutral-900 border border-[#FF6124] rounded-xl p-6">
@@ -785,10 +1023,33 @@ export function PlayersPicker({ teams, homeTeamId, awayTeamId, selected, onChang
   const homeTeam = teams.find(t => t.id === homeTeamId);
   const awayTeam = teams.find(t => t.id === awayTeamId);
 
-  const pool = [
-    ...(homeTeam?.[type] || []),
-    ...(awayTeam?.[type] || []),
-  ];
+  function dedupe(list) {
+    const seen = new Set();
+    return list.filter((p) => {
+      if (!p?.id) return false;
+      if (seen.has(p.id)) return false;
+      seen.add(p.id);
+      return true;
+    });
+  }
+
+  const sections = [];
+
+  if (homeTeam) {
+    const players = (type === "subs") ? [] : dedupe([...(homeTeam.players || [])]);
+    const subs = (type === "players") ? [] : dedupe([...(homeTeam.subs || [])]);
+    if (players.length || subs.length) {
+      sections.push({ key: `home-${homeTeam.id}`, players, subs });
+    }
+  }
+
+  if (awayTeam) {
+    const players = (type === "subs") ? [] : dedupe([...(awayTeam.players || [])]);
+    const subs = (type === "players") ? [] : dedupe([...(awayTeam.subs || [])]);
+    if (players.length || subs.length) {
+      sections.push({ key: `away-${awayTeam.id}`, players, subs });
+    }
+  }
 
   function toggle(id) {
     if (selected.includes(id)) {
@@ -799,24 +1060,50 @@ export function PlayersPicker({ teams, homeTeamId, awayTeamId, selected, onChang
   }
 
   return (
-    <div className="flex flex-wrap gap-2">
-      {pool.length ? (
-        pool.map(p => (
-          <button
-            key={p.id}
-            onClick={() => toggle(p.id)}
-            className={`px-3 py-2 rounded-xl border text-sm ${
-              selected.includes(p.id)
-                ? "border-[#FF6124] bg-[#FF6124]/15"
-                : "border-neutral-800 bg-neutral-900 hover:border-[#FF6124]/50"
-            }`}
-          >
-            {p.number ? `#${p.number} ` : ""}{p.name}
-          </button>
-        ))
-      ) : (
+    <div className="space-y-2">
+      {sections.length === 0 && (
         <div className="text-neutral-500 text-sm">Voeg spelers toe aan teams.</div>
       )}
+
+      {sections.map((section, idx) => (
+        <div key={section.key} className={idx > 0 ? "pt-1 border-t border-neutral-900" : ""}>
+          {section.players.length > 0 && (
+            <div className="flex flex-wrap gap-2 mb-2">
+              {section.players.map((p) => (
+                <button
+                  key={p.id}
+                  onClick={() => toggle(p.id)}
+                  className={`px-3 py-2 rounded-xl border text-sm ${
+                    selected.includes(p.id)
+                      ? "border-[#FF6124] bg-[#FF6124]/15"
+                      : "border-neutral-800 bg-neutral-900 hover:border-[#FF6124]/50"
+                  }`}
+                >
+                  {p.number ? `#${p.number} ` : ""}{p.name}
+                </button>
+              ))}
+            </div>
+          )}
+
+          {section.subs.length > 0 && (
+            <div className="flex flex-wrap gap-2 mt-1">
+              {section.subs.map((p) => (
+                <button
+                  key={p.id}
+                  onClick={() => toggle(p.id)}
+                  className={`px-3 py-2 rounded-xl border text-sm ${
+                    selected.includes(p.id)
+                      ? "border-[#FF6124] bg-[#FF6124]/15"
+                      : "border-neutral-800 bg-neutral-900 hover:border-[#FF6124]/50"
+                  }`}
+                >
+                  {p.number ? `#${p.number} ` : ""}{p.name}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      ))}
     </div>
   );
 }

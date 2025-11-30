@@ -52,7 +52,11 @@ export default function Sidebar() {
               }`
             }
           >
-            {!collapsed && <span className="truncate">{link.label}</span>}
+            {!collapsed && (
+              <span className="truncate flex items-center gap-2">
+                <span>{link.label}</span>
+              </span>
+            )}
           </NavLink>
         ))}
       </nav>

@@ -15,6 +15,8 @@ import Login from "./pages/Login";
 import Signup from "./pages/Signup";
 import ForgotPassword from "./pages/ForgotPassword";
 import VerifyEmail from "./pages/VerifyEmail";
+import LiveTagging from "./pages/LiveTagging";
+import LiveEntry from "./pages/LiveEntry";
 
 function PrivateRoute({ children }) {
   const { currentUser } = useAuth();
@@ -45,9 +47,11 @@ function AppContent() {
             <Route path="/verify-email" element={<VerifyEmail />} />
             
             <Route path="/" element={<PrivateRoute><Dashboard /></PrivateRoute>} />
+            <Route path="/live" element={<PrivateRoute><LiveEntry /></PrivateRoute>} />
             <Route path="/matches" element={<PrivateRoute><Matches /></PrivateRoute>} />
             <Route path="/matches/:matchId" element={<PrivateRoute><MatchDetail /></PrivateRoute>} />
             <Route path="/match/:matchId" element={<PrivateRoute><MatchDetail /></PrivateRoute>} />
+            <Route path="/live/:matchId" element={<PrivateRoute><LiveTagging /></PrivateRoute>} />
             <Route path="/statistics" element={<PrivateRoute><Statistics /></PrivateRoute>} />
             <Route path="/player/:playerName" element={<PrivateRoute><PlayerProfile /></PrivateRoute>} />
             <Route path="/teams" element={<PrivateRoute><Teams /></PrivateRoute>} />

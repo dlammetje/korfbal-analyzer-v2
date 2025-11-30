@@ -268,13 +268,23 @@ export default function Dashboard() {
     const player = allPlayers.find((p) => p.id === best.playerId);
     if (!player) return null;
 
+    const name = player.name || "Onbekend";
+    const initials = name
+      .split(" ")
+      .filter(Boolean)
+      .map((part) => part[0]?.toUpperCase())
+      .slice(0, 2)
+      .join("");
+
     return {
-      name: player.name || "Onbekend",
+      name,
       team: player.teamName || "",
       goals: best.goals,
       attempts: best.attempts,
       fg: Math.round(best.fg),
       match: latest,
+      avatarUrl: player.avatarUrl || "",
+      initials,
     };
   }, [matchesForClub, baseClips, teams, preferredTeamId]);
 
@@ -287,9 +297,22 @@ export default function Dashboard() {
       {/* SPELER VAN DE WEEK */}
       {playerOfTheWeek && (
         <div className="bg-neutral-900 border border-neutral-800 rounded-2xl p-4 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="p-3 rounded-xl bg-[#FF6124]/20 text-[#FF6124]">
-              <Trophy size={24} />
+          <div className="flex items-center gap-4">
+            <div className="relative flex items-center">
+              <div className="p-3 rounded-xl bg-[#FF6124]/20 text-[#FF6124] mr-3">
+                <Trophy size={24} />
+              </div>
+              <div className="w-12 h-12 rounded-full overflow-hidden bg-neutral-800 flex items-center justify-center text-sm font-semibold text-neutral-200">
+                {playerOfTheWeek.avatarUrl ? (
+                  <img
+                    src={playerOfTheWeek.avatarUrl}
+                    alt={playerOfTheWeek.name}
+                    className="w-full h-full object-cover"
+                  />
+                ) : (
+                  <span>{playerOfTheWeek.initials || "?"}</span>
+                )}
+              </div>
             </div>
             <div>
               <div className="text-xs text-neutral-400 uppercase tracking-wide">Speler van de week</div>

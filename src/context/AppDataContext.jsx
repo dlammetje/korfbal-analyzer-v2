@@ -311,6 +311,62 @@ export function AppDataProvider({ children }) {
     );
   }
 
+  async function updatePlayerAvatar(teamId, playerId, avatarUrl) {
+    const updateLocal = () => {
+      setTeams((prev) =>
+        prev.map((t) => {
+          if (t.id !== teamId) return t;
+          const updateList = (list = []) =>
+            list.map((p) => (p.id === playerId ? { ...p, avatarUrl } : p));
+          return {
+            ...t,
+            players: updateList(t.players),
+            subs: updateList(t.subs),
+          };
+        })
+      );
+    };
+
+    if (!teamId || !playerId) {
+      console.warn("updatePlayerAvatar: ontbrekende teamId/playerId", { teamId, playerId });
+      return false;
+    }
+
+    if (useFirestore) {
+      try {
+        const { doc, getDoc, updateDoc } = await ensureFirebaseFns();
+        const ref = doc(db, "teams", teamId);
+        const snap = await getDoc(ref);
+        if (!snap.exists()) {
+          console.error("[Firestore] Team niet gevonden voor updatePlayerAvatar:", teamId);
+          return false;
+        }
+
+        const data = snap.data() || {};
+        const updateList = (list = []) =>
+          list.map((p) => (p.id === playerId ? { ...p, avatarUrl } : p));
+
+        const nextPlayers = updateList(data.players || []);
+        const nextSubs = updateList(data.subs || []);
+
+        await updateDoc(ref, {
+          players: nextPlayers,
+          subs: nextSubs,
+        });
+
+        updateLocal();
+        console.log("[Firestore] avatar bijgewerkt voor speler", playerId);
+        return true;
+      } catch (e) {
+        console.error("[Firestore] Fout bij updatePlayerAvatar:", e);
+        return false;
+      }
+    }
+
+    updateLocal();
+    return true;
+  }
+
   async function addOpponentToTeam(teamId, opponentName) {
     if (useFirestore) {
       try {
@@ -653,6 +709,7 @@ export function AppDataProvider({ children }) {
       addPlayer,
       addPlayerToTeam,
       removePlayer,
+      updatePlayerAvatar,
 
       // wissels
       addSubToTeam: (teamId, player) => addPlayer(teamId, { ...player, isSub: true }),

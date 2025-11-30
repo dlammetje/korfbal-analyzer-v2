@@ -6,6 +6,42 @@ import { db } from "../lib/firebaseClient";
 import { doc, getDoc } from "firebase/firestore";
 import FieldHeatmap from "../components/FieldHeatmap";
 
+function StatCard({ title, value, color }) {
+  return (
+    <div className="bg-neutral-900 border border-neutral-800 rounded-xl p-4 text-center">
+      <div className="text-neutral-400 text-sm">{title}</div>
+      <div className="text-2xl mt-1 font-semibold" style={{ color: color || "white" }}>{value}</div>
+    </div>
+  );
+}
+
+function ZoneList({ title, zones }) {
+  if (!zones.length) {
+    return (
+      <div>
+        <div className="text-sm font-semibold mb-2">{title}</div>
+        <div className="text-xs text-neutral-500">Nog onvoldoende data.</div>
+      </div>
+    );
+  }
+
+  return (
+    <div>
+      <div className="text-sm font-semibold mb-2">{title}</div>
+      <div className="space-y-1">
+        {zones.map((z) => (
+          <div key={z.zone} className="flex items-center justify-between text-xs">
+            <span className="text-neutral-200">{z.zone}</span>
+            <span className="text-neutral-400">
+              {z.goal}/{z.goal + z.miss} ({z.pct}%)
+            </span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 const ZONES = [
   "Linksvoor", "Voor (midden)", "Rechtsvoor",
   "Linkerzij", "Korfzone", "Rechterzij",
@@ -109,6 +145,27 @@ export default function PlayerProfile() {
     });
     return Array.from(set);
   }, [playerClips]);
+
+  const profilePlayer = useMemo(() => {
+    if (!decodedName) return null;
+    for (const t of teams || []) {
+      const candidate = (t.players || []).concat(t.subs || []).find((p) => p.name === decodedName);
+      if (candidate) {
+        return candidate;
+      }
+    }
+    return null;
+  }, [teams, decodedName]);
+
+  const avatarInitials = useMemo(() => {
+    const name = decodedName || "";
+    return name
+      .split(" ")
+      .filter(Boolean)
+      .map((part) => part[0]?.toUpperCase())
+      .slice(0, 2)
+      .join("");
+  }, [decodedName]);
 
   const stats = useMemo(() => {
     const shots = playerClips.filter((c) => c.actionType === "schot");
@@ -221,17 +278,30 @@ export default function PlayerProfile() {
   return (
     <div className="p-6 space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-2">
-        <div>
-          <h2 className="text-2xl font-semibold">Spelerprofiel</h2>
-          <div className="text-xl font-semibold mt-1">{decodedName || "Onbekende speler"}</div>
-          {playerTeams.length > 0 && (
-            <div className="text-sm text-neutral-400 mt-1">
-              Teams: {playerTeams.join(", ")}
-            </div>
-          )}
-          <div className="text-xs text-neutral-500 mt-1">
-            Wedstrijden met clips: {stats.matchesCount}
+        <div className="flex items-center gap-3">
+          <div className="w-12 h-12 rounded-full overflow-hidden bg-neutral-800 flex items-center justify-center text-sm font-semibold text-neutral-200">
+            {profilePlayer?.avatarUrl ? (
+              <img
+                src={profilePlayer.avatarUrl}
+                alt={decodedName || "Speler"}
+                className="w-full h-full object-cover"
+              />
+            ) : (
+              <span>{avatarInitials || "?"}</span>
+            )}
           </div>
+          <div>
+            <h2 className="text-2xl font-semibold">Spelerprofiel</h2>
+            <div className="text-xl font-semibold mt-1">{decodedName || "Onbekende speler"}</div>
+          </div>
+        </div>
+        {playerTeams.length > 0 && (
+          <div className="text-sm text-neutral-400 mt-1">
+            Teams: {playerTeams.join(", ")}
+          </div>
+        )}
+        <div className="text-xs text-neutral-500 mt-1">
+          Wedstrijden met clips: {stats.matchesCount}
         </div>
       </div>
 
@@ -294,42 +364,6 @@ export default function PlayerProfile() {
             </tbody>
           </table>
         )}
-      </div>
-    </div>
-  );
-}
-
-function StatCard({ title, value, color }) {
-  return (
-    <div className="bg-neutral-900 border border-neutral-800 rounded-xl p-4 text-center">
-      <div className="text-neutral-400 text-sm">{title}</div>
-      <div className="text-2xl mt-1 font-semibold" style={{ color: color || "white" }}>{value}</div>
-    </div>
-  );
-}
-
-function ZoneList({ title, zones }) {
-  if (!zones.length) {
-    return (
-      <div>
-        <div className="text-sm font-semibold mb-2">{title}</div>
-        <div className="text-xs text-neutral-500">Nog onvoldoende data.</div>
-      </div>
-    );
-  }
-
-  return (
-    <div>
-      <div className="text-sm font-semibold mb-2">{title}</div>
-      <div className="space-y-1">
-        {zones.map((z) => (
-          <div key={z.zone} className="flex items-center justify-between text-xs">
-            <span className="text-neutral-200">{z.zone}</span>
-            <span className="text-neutral-400">
-              {z.goal}/{z.goal + z.miss} ({z.pct}%)
-            </span>
-          </div>
-        ))}
       </div>
     </div>
   );

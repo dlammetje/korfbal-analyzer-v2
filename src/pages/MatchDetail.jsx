@@ -511,6 +511,7 @@ export default function MatchDetail() {
   // --- Actions / tagging ---
   const allowedUploadEmails = [
     "dlammetje@gmail.com",
+    "lvandeuveren91@gmail.com",
     // Voeg hier eventueel extra trainers/coaches toe
   ];
 

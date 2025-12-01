@@ -78,6 +78,7 @@ export default function MatchDetail() {
     deleteClipSequence,
     setClipSequenceForClip,
     setClipFavorite,
+    updateClipPosition,
   } = useAppData() || {};
 
   const match = useMemo(
@@ -133,6 +134,8 @@ export default function MatchDetail() {
 
   // --- AI-voorgestelde clips (dummy voor nu) ---
   const [aiSuggestions, setAiSuggestions] = useState([]);
+
+  const [selectedClipForEdit, setSelectedClipForEdit] = useState(null);
 
   // Laad clubId van de ingelogde gebruiker zodat nieuwe clips aan een club gekoppeld kunnen worden
   useEffect(() => {
@@ -1141,7 +1144,23 @@ export default function MatchDetail() {
                               ? `${p.number ? `#${p.number} ` : ""}${p.name}`
                               : "—"}
                           </td>
-                          <td className="px-4 py-2">{c.zone || "—"}</td>
+                          <td className="px-4 py-2">
+                            {typeof c.x === "number" && typeof c.y === "number" ? (
+                              c.zone || "—"
+                            ) : (
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  const pos = { x: 0.5, y: 0.5 };
+                                  setSelectedClipForEdit(c);
+                                  setFieldPosition(pos);
+                                }}
+                                className="text-[11px] px-2 py-1 rounded-lg border border-neutral-700 text-neutral-300 bg-neutral-900 hover:bg-neutral-800"
+                              >
+                                Locatie
+                              </button>
+                            )}
+                          </td>
                           <td className="px-4 py-2">
                             {c.actionType ? c.actionType.replaceAll("_", " ") : "—"}
                           </td>
@@ -1183,7 +1202,7 @@ export default function MatchDetail() {
                               />
                             </button>
                           </td>
-                          <td className="px-4 py-2 text-right">
+                            <td className="px-4 py-2 text-right">
                             <button
                               onClick={(e) => {
                                 e.stopPropagation();
@@ -1432,6 +1451,56 @@ export default function MatchDetail() {
                 maxWidth="max-w-lg"
               />
             </div>
+
+            {selectedClipForEdit && (
+              <div className="mt-3 p-2 rounded-xl bg-neutral-900 border border-neutral-800 text-xs space-y-2">
+                <div className="text-neutral-300">Locatie bewerken voor clip:</div>
+                <div className="text-neutral-400">
+                  <span className="font-mono mr-2">{fmt(selectedClipForEdit.time || 0)}</span>
+                  <span className="mr-2">{selectedClipForEdit.half || 1}e helft</span>
+                  {(() => {
+                    const p = matchPlayers.find((x) => x.id === selectedClipForEdit.playerId);
+                    return (
+                      <span className="mr-2">
+                        {p ? `${p.number ? `#${p.number} ` : ""}${p.name}` : "Onbekende speler"}
+                      </span>
+                    );
+                  })()}
+                  <span className="text-neutral-500">
+                    {selectedClipForEdit.actionType || "actie"}
+                  </span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      if (!selectedClipForEdit?.id || !updateClipPosition) return;
+                      if (!fieldPosition || typeof fieldPosition.x !== "number" || typeof fieldPosition.y !== "number") return;
+                      const newZone = inferZoneFromPosition(fieldPosition);
+                      const ok = await updateClipPosition(selectedClipForEdit.id, {
+                        x: fieldPosition.x,
+                        y: fieldPosition.y,
+                        zone: newZone,
+                      });
+                      if (ok) {
+                        setSelectedClipForEdit(null);
+                        setFieldPosition(null);
+                      }
+                    }}
+                    className="px-3 py-1 rounded-lg bg-[#FF6124] text-white text-[11px] font-medium hover:opacity-90"
+                  >
+                    Locatie opslaan
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setSelectedClipForEdit(null)}
+                    className="px-2 py-1 rounded-lg border border-neutral-700 text-[11px] text-neutral-400 hover:text-white"
+                  >
+                    Annuleren
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
 
           {/* ATTACK / DEFENSE */}

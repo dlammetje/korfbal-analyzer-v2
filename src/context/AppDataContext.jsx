@@ -246,6 +246,37 @@ export function AppDataProvider({ children }) {
     }
   }
 
+  async function updateClipPosition(clipId, { x, y, zone }) {
+    try {
+      if (useFirestore) {
+        const { doc, updateDoc } = await ensureFirebaseFns();
+        const payload = {};
+        if (typeof x === "number") payload.x = x;
+        if (typeof y === "number") payload.y = y;
+        if (typeof zone === "string") payload.zone = zone;
+        await updateDoc(doc(db, "clips", clipId), payload);
+      }
+
+      setClips((prev) =>
+        prev.map((c) =>
+          c.id === clipId
+            ? {
+                ...c,
+                x: typeof x === "number" ? x : c.x,
+                y: typeof y === "number" ? y : c.y,
+                zone: typeof zone === "string" ? zone : c.zone,
+              }
+            : c
+        )
+      );
+
+      return true;
+    } catch (e) {
+      console.error("[Firestore] updateClipPosition fout:", e);
+      return false;
+    }
+  }
+
   async function addPlayer(teamId, { name, number, isSub = false }) {
     if (useFirestore) {
       try {
@@ -727,6 +758,7 @@ export function AppDataProvider({ children }) {
       getClipsByMatch,
       addClip,
       deleteClip,
+      updateClipPosition,
       getSequencesByMatch,
       addClipSequence,
       deleteClipSequence,

@@ -191,11 +191,22 @@ export default function Matches() {
     text: "",
   });
   const [notesByMatch, setNotesByMatch] = useState({}); // { [matchId]: [{ id, title, type, text, likes, createdAt }] }
+  const [notesBadgeDismissed, setNotesBadgeDismissed] = useState({}); // { [matchId]: true }
 
   // --- Sequentie playlist modal state ---
   const [sequenceModalMatchId, setSequenceModalMatchId] = useState("");
   const [sequenceSelectedId, setSequenceSelectedId] = useState("");
   const [sequencePlaylistIndex, setSequencePlaylistIndex] = useState(0);
+
+  const allowedManageEmails = [
+    "dlammetje@gmail.com",
+    "lvandeuveren91@gmail.com",
+  ];
+
+  const canManageMatches =
+    !!currentUser &&
+    !!currentUser.email &&
+    allowedManageEmails.includes(currentUser.email);
 
   // --- Afgeleide opponent-lijsten voor dropdowns ---
   const homeTeamObj = teams.find(t => t.id === newMatch.homeTeamId) || null;
@@ -505,7 +516,7 @@ export default function Matches() {
             onClick={handleCreateMatch}
             className="bg-[#FF6124] text-white px-4 py-2 rounded-xl flex items-center gap-2"
           >
-            <Plus size={16} /> Nieuwe wedstrijd
+            <Plus size={16} /> Wedstrijd aanmaken
           </button>
         </div>
       </div>
@@ -606,24 +617,35 @@ export default function Matches() {
                         onClick={(e) => {
                           e.stopPropagation();
                           setNotesModalMatchId(m.id);
+                          setNotesBadgeDismissed((prev) => ({
+                            ...prev,
+                            [m.id]: true,
+                          }));
                         }}
-                        className="p-2 rounded-lg border border-neutral-600 text-neutral-200 hover:border-[#FF6124] hover:text-[#FF6124]"
+                        className="relative p-2 rounded-lg border border-neutral-600 text-neutral-200 hover:border-[#FF6124] hover:text-[#FF6124]"
                         title="Notes"
                       >
                         <FileText size={14} />
+                        {Array.isArray(notesByMatch[m.id]) && notesByMatch[m.id].length > 0 && !notesBadgeDismissed[m.id] && (
+                          <span className="absolute -top-1 -right-1 min-w-[16px] h-4 px-1 rounded-full bg-red-500 text-[10px] leading-4 text-white text-center font-semibold">
+                            {notesByMatch[m.id].length}
+                          </span>
+                        )}
                       </button>
 
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          if (confirm("Weet je zeker dat je deze wedstrijd wilt verwijderen?")) {
-                            deleteMatch(m.id);
-                          }
-                        }}
-                        className="p-2 rounded-lg border border-red-600 text-red-400 hover:bg-red-900/30"
-                      >
-                        <Trash2 size={14} />
-                      </button>
+                      {canManageMatches && (
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            if (confirm("Weet je zeker dat je deze wedstrijd wilt verwijderen?")) {
+                              deleteMatch(m.id);
+                            }
+                          }}
+                          className="p-2 rounded-lg border border-red-600 text-red-400 hover:bg-red-900/30"
+                        >
+                          <Trash2 size={14} />
+                        </button>
+                      )}
                     </td>
                   </tr>
                 );

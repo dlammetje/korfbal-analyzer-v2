@@ -222,6 +222,18 @@ export default function Matches() {
     ? awayTeamObj.opponents
     : null;
 
+  // Notes uit matches initialiseren zodat ze blijven bestaan na reload
+  useEffect(() => {
+    if (!Array.isArray(matches)) return;
+    const map = {};
+    for (const m of matches) {
+      if (Array.isArray(m.notes) && m.notes.length) {
+        map[m.id] = m.notes;
+      }
+    }
+    setNotesByMatch(map);
+  }, [matches]);
+
   useEffect(() => {
     if (!selectedMatch) {
       setSrc1(""); setSrc2(""); setCurrentHalf(1); setPlaying(false);
@@ -917,23 +929,25 @@ export default function Matches() {
                       return;
                     }
                     const id = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-                    setNotesByMatch((prev) => {
-                      const list = prev[notesModalMatchId] || [];
-                      return {
-                        ...prev,
-                        [notesModalMatchId]: [
-                          {
-                            id,
-                            title: notesDraft.title.trim() || "(zonder titel)",
-                            type: notesDraft.type,
-                            text: notesDraft.text.trim(),
-                            likes: 0,
-                            createdAt: new Date().toISOString(),
-                          },
-                          ...list,
-                        ],
-                      };
-                    });
+                    const list = notesByMatch[notesModalMatchId] || [];
+                    const next = [
+                      {
+                        id,
+                        title: notesDraft.title.trim() || "(zonder titel)",
+                        type: notesDraft.type,
+                        text: notesDraft.text.trim(),
+                        likes: 0,
+                        createdAt: new Date().toISOString(),
+                      },
+                      ...list,
+                    ];
+                    setNotesByMatch((prev) => ({
+                      ...prev,
+                      [notesModalMatchId]: next,
+                    }));
+                    if (notesModalMatchId) {
+                      updateMatch(notesModalMatchId, { notes: next });
+                    }
                     setNotesDraft({ title: "", type: "leermoment", text: "" });
                   }}
                   className="px-4 py-2 rounded-xl bg-[#FF6124] text-white text-sm font-medium hover:opacity-90"
@@ -985,15 +999,17 @@ export default function Matches() {
                         <button
                           type="button"
                           onClick={() => {
-                            setNotesByMatch((prev) => {
-                              const list = prev[notesModalMatchId] || [];
-                              return {
-                                ...prev,
-                                [notesModalMatchId]: list.map((x) =>
-                                  x.id === n.id ? { ...x, likes: (x.likes || 0) + 1 } : x
-                                ),
-                              };
-                            });
+                            const list = notesByMatch[notesModalMatchId] || [];
+                            const next = list.map((x) =>
+                              x.id === n.id ? { ...x, likes: (x.likes || 0) + 1 } : x
+                            );
+                            setNotesByMatch((prev) => ({
+                              ...prev,
+                              [notesModalMatchId]: next,
+                            }));
+                            if (notesModalMatchId) {
+                              updateMatch(notesModalMatchId, { notes: next });
+                            }
                           }}
                           className="flex flex-col items-center justify-center text-xs px-2 py-1 rounded-lg border border-neutral-700 text-neutral-300 hover:border-[#FF6124] hover:text-[#FF6124]"
                         >
@@ -1003,13 +1019,15 @@ export default function Matches() {
                         <button
                           type="button"
                           onClick={() => {
-                            setNotesByMatch((prev) => {
-                              const list = prev[notesModalMatchId] || [];
-                              return {
-                                ...prev,
-                                [notesModalMatchId]: list.filter((x) => x.id !== n.id),
-                              };
-                            });
+                            const list = notesByMatch[notesModalMatchId] || [];
+                            const next = list.filter((x) => x.id !== n.id);
+                            setNotesByMatch((prev) => ({
+                              ...prev,
+                              [notesModalMatchId]: next,
+                            }));
+                            if (notesModalMatchId) {
+                              updateMatch(notesModalMatchId, { notes: next });
+                            }
                           }}
                           className="text-[10px] px-2 py-1 rounded-lg border border-red-700 text-red-400 hover:bg-red-900/30"
                         >

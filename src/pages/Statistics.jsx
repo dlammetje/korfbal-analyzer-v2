@@ -201,6 +201,9 @@ export default function Statistics() {
     const chanceShots = statsClips.filter(isChanceAction);
     const chanceGoals = chanceShots.filter(isGoal);
 
+    const totalCombinedAttempts = shots.length + chanceShots.length;
+    const totalCombinedGoals = goals.length + chanceGoals.length;
+
     const countByType = (actions) => {
       const list = statsClips.filter((c) => actions.includes(c.actionType));
       const goalsType = list.filter(isGoal);
@@ -233,6 +236,11 @@ export default function Statistics() {
       chanceAttempts: chanceShots.length,
       chanceGoals: chanceGoals.length,
       chanceFg: chanceShots.length ? Math.round((chanceGoals.length / chanceShots.length) * 100) : 0,
+      totalCombinedAttempts,
+      totalCombinedGoals,
+      totalCombinedFg: totalCombinedAttempts
+        ? Math.round((totalCombinedGoals / totalCombinedAttempts) * 100)
+        : 0,
       assists: statsClips.filter(c => c.actionType === "assist").length,
       turnovers: statsClips.filter(c => c.actionType === "balverlies").length,
       fouls: statsClips.filter(c => c.actionType === "overtreding").length,
@@ -710,6 +718,13 @@ export default function Statistics() {
           value={playerStats.misses}
           color="#dc2626"
         />
+        {statsMode === "for" && (
+          <StatCard
+            title="Totaal kansen (schot + overige)"
+            value={`${playerStats.totalCombinedGoals}/${playerStats.totalCombinedAttempts} (${playerStats.totalCombinedFg}%)`}
+            color="#22c55e"
+          />
+        )}
         <StatCard
           title={statsMode === "for" ? "Raak% overige kansen" : "Raak% tegenkansen"}
           value={`${playerStats.chanceFg}%`}
@@ -904,6 +919,43 @@ export default function Statistics() {
                   <th className="text-center px-3">Speler B{compareRows.b ? ` (${compareRows.b.player})` : ""}</th>
                   {showCompareC && (
                     <th className="text-center px-3">Speler C{compareRows.c ? ` (${compareRows.c.player})` : ""}</th>
+                  )}
+                </tr>
+
+                {/* Alles samen: schoten + overige kansen */}
+                <tr className="border-t border-neutral-800">
+                  <td className="py-2 pr-3 text-neutral-200 whitespace-nowrap">Totaal kansen (raak/pogingen, FG%)</td>
+                  <td className="text-center px-3 text-neutral-100">
+                    {(() => {
+                      const r = compareRows.a;
+                      if (!r) return "-";
+                      const att = (r.shotAttempts || 0) + (r.chanceAttempts || 0);
+                      const goals = (r.shotGoals || 0) + (r.chanceGoals || 0);
+                      const pct = att ? Math.round((goals / att) * 100) : 0;
+                      return `${goals}/${att} (${pct}%)`;
+                    })()}
+                  </td>
+                  <td className="text-center px-3 text-neutral-100">
+                    {(() => {
+                      const r = compareRows.b;
+                      if (!r) return "-";
+                      const att = (r.shotAttempts || 0) + (r.chanceAttempts || 0);
+                      const goals = (r.shotGoals || 0) + (r.chanceGoals || 0);
+                      const pct = att ? Math.round((goals / att) * 100) : 0;
+                      return `${goals}/${att} (${pct}%)`;
+                    })()}
+                  </td>
+                  {showCompareC && (
+                    <td className="text-center px-3 text-neutral-100">
+                      {(() => {
+                        const r = compareRows.c;
+                        if (!r) return "-";
+                        const att = (r.shotAttempts || 0) + (r.chanceAttempts || 0);
+                        const goals = (r.shotGoals || 0) + (r.chanceGoals || 0);
+                        const pct = att ? Math.round((goals / att) * 100) : 0;
+                        return `${goals}/${att} (${pct}%)`;
+                      })()}
+                    </td>
                   )}
                 </tr>
               </thead>
@@ -1363,6 +1415,7 @@ function PlayerStatsTable({ rows, total }) {
           <tr className="border-b border-neutral-800">
             <th className="text-left py-2 pr-3">Speler</th>
             <th className="text-center px-3">Schoten</th>
+            <th className="text-center px-3">Alles samen</th>
             <th className="text-center px-3">Kansen</th>
             <th className="text-center px-3">Reb. aanv.</th>
             <th className="text-center px-3">Reb. verd.</th>
@@ -1377,6 +1430,9 @@ function PlayerStatsTable({ rows, total }) {
             const isTotal = r.player === "Totaal";
             const shotPct = pct(r.shotGoals, r.shotAttempts);
             const chancePct = pct(r.chanceGoals, r.chanceAttempts);
+            const combinedAttempts = r.combinedAttempts || (r.shotAttempts || 0) + (r.chanceAttempts || 0);
+            const combinedGoals = r.combinedGoals || (r.shotGoals || 0) + (r.chanceGoals || 0);
+            const combinedPct = pct(combinedGoals, combinedAttempts);
 
             return (
               <tr
@@ -1397,6 +1453,23 @@ function PlayerStatsTable({ rows, total }) {
                       </div>
                       <div className={shotPct >= 50 ? "text-green-500" : "text-red-500"}>
                         {shotPct}%
+                      </div>
+                    </div>
+                  ) : (
+                    <span className="text-neutral-500">0 / 0</span>
+                  )}
+                </td>
+
+                {/* Alles samen (schoten + kansen) */}
+                <td className="text-center px-3">
+                  {combinedAttempts ? (
+                    <div className="space-y-0.5">
+                      <div>
+                        <span className="text-green-500">{combinedGoals}</span>
+                        <span className="text-neutral-400"> / {combinedAttempts}</span>
+                      </div>
+                      <div className={combinedPct >= 50 ? "text-green-500" : "text-red-500"}>
+                        {combinedPct}%
                       </div>
                     </div>
                   ) : (

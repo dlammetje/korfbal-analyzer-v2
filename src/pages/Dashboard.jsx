@@ -90,7 +90,7 @@ export default function Dashboard() {
 
     if (!preferredTeamId) return nonSeq;
 
-    const matchIds = matches
+    const matchIds = matchesForClub
       .filter((m) => m.homeTeamId === preferredTeamId || m.awayTeamId === preferredTeamId)
       .map((m) => m.id);
 
@@ -190,7 +190,7 @@ export default function Dashboard() {
     .sort((a, b) => new Date(b.date) - new Date(a.date))
     .slice(0, 4);
 
-  // Speler van de week: beste schutter in de meest recente wedstrijd op basis van FG%
+  // Speler van de week: beste afmaker in de meest recente wedstrijd op basis van FG%
   const playerOfTheWeek = useMemo(() => {
     if (!matchesForClub.length || !baseClips.length || !teams.length) return null;
 
@@ -205,14 +205,18 @@ export default function Dashboard() {
       .filter((m) => m.date)
       .sort((a, b) => new Date(b.date) - new Date(a.date));
 
-    // Zoek de meest recente wedstrijd WAAR schoten voor zijn getagd
+    const isChanceAction = (c) =>
+      c.actionType === "schot" ||
+      ["doorloopbal", "kleine_kans", "strafworp", "vrije_bal"].includes(c.actionType);
+
+    // Zoek de meest recente wedstrijd WAAR kansen voor zijn getagd
     let latestWithShots = null;
     for (const m of sorted) {
-      const shotsForMatch = baseClips.filter(
-        (c) => c.matchId === m.id && c.actionType === "schot"
+      const chancesForMatch = baseClips.filter(
+        (c) => c.matchId === m.id && isChanceAction(c)
       );
-      if (shotsForMatch.length) {
-        latestWithShots = { match: m, clips: shotsForMatch };
+      if (chancesForMatch.length) {
+        latestWithShots = { match: m, clips: chancesForMatch };
         break;
       }
     }
@@ -325,8 +329,8 @@ export default function Dashboard() {
           </div>
           <div className="text-right text-sm">
             <div className="text-neutral-300">
-              Schoten: <span className="text-green-400">{playerOfTheWeek.goals}</span>
-              <span className="text-neutral-400"> / {playerOfTheWeek.attempts}</span>
+              <span className="text-green-400">{playerOfTheWeek.goals}</span>
+              <span className="text-neutral-400">/{playerOfTheWeek.attempts} goals</span>
             </div>
             <div className="text-sm font-semibold mt-1 text-green-400">
               {playerOfTheWeek.fg}% raak
@@ -432,7 +436,7 @@ export default function Dashboard() {
   );
 }
 
-/* COMPONENTS BELOW */
+// COMPONENTS BELOW
 
 function KpiCard({ icon, label, value }) {
   return (

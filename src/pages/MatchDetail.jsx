@@ -189,7 +189,8 @@ export default function MatchDetail() {
     [match, getSubsByMatch]
   );
 
-  // Huidige opstelling op basis van basis-8 (match.players), bank (alle overige teamspelers) en wissels t/m huidige videotijd
+  // Huidige opstelling op basis van basis-8 (match.players), bank (alle overige teamspelers)
+  // en alle geregistreerde wissels in de wedstrijd (ongeacht exacte videotijd)
   const lineup = useMemo(() => {
     if (!match || !matchPlayers.length) {
       return { onField: [], bench: [] };
@@ -219,31 +220,23 @@ export default function MatchDetail() {
       return (a.time || 0) - (b.time || 0);
     });
 
-    const currentHalfLocal = currentHalf || 1;
-    const currentTimeLocal = videoTime || 0;
-
+    // Pas alle wissels in chronologische volgorde toe, zodat we altijd de meest recente
+    // veldbezetting krijgen, ongeacht de huidige videopositie.
     for (const s of orderedSubs) {
-      const sh = s.half || 1;
-      const st = s.time || 0;
-
-      if (sh < currentHalfLocal || (sh === currentHalfLocal && st <= currentTimeLocal)) {
-        if (s.outPlayer && onField.has(s.outPlayer)) {
-          onField.delete(s.outPlayer);
-          bench.add(s.outPlayer);
-        }
-        if (s.inPlayer) {
-          bench.delete(s.inPlayer);
-          onField.add(s.inPlayer);
-        }
-      } else {
-        break;
+      if (s.outPlayer && onField.has(s.outPlayer)) {
+        onField.delete(s.outPlayer);
+        bench.add(s.outPlayer);
+      }
+      if (s.inPlayer) {
+        bench.delete(s.inPlayer);
+        onField.add(s.inPlayer);
       }
     }
 
     const onFieldPlayers = matchPlayers.filter((p) => onField.has(p.id));
     const benchPlayers = matchPlayers.filter((p) => bench.has(p.id));
     return { onField: onFieldPlayers, bench: benchPlayers };
-  }, [match, matchPlayers, subs, currentHalf, videoTime]);
+  }, [match, matchPlayers, subs]);
 
   const onFieldPlayers = lineup.onField;
   const benchPlayers = lineup.bench;

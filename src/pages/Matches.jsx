@@ -168,6 +168,15 @@ export default function Matches() {
     );
   }, [matches, preferredTeamId, userClubId]);
 
+  const sortedMatches = useMemo(() => {
+    if (!Array.isArray(visibleMatches) || !visibleMatches.length) return [];
+    return [...visibleMatches].sort((a, b) => {
+      const da = a.date || "";
+      const db = b.date || "";
+      return db.localeCompare(da);
+    });
+  }, [visibleMatches]);
+
   const [src1, setSrc1] = useState("");
   const [src2, setSrc2] = useState("");
   const [currentHalf, setCurrentHalf] = useState(1);
@@ -539,7 +548,7 @@ export default function Matches() {
           Alle wedstrijden
         </h3>
 
-        {visibleMatches.length === 0 ? (
+        {sortedMatches.length === 0 ? (
           <div className="text-neutral-500 text-sm">
             Nog geen wedstrijden toegevoegd.
           </div>
@@ -555,7 +564,7 @@ export default function Matches() {
               </tr>
             </thead>
             <tbody>
-              {visibleMatches.map((m) => {
+              {sortedMatches.map((m) => {
                 let homeName = formatTeamName(m.homeTeamId, teams);
                 let awayName = formatTeamName(m.awayTeamId, teams);
 

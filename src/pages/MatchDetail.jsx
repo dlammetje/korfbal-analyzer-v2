@@ -103,6 +103,7 @@ export default function MatchDetail() {
   const videoRef = useRef(null);
   const videoShellRef = useRef(null);
   const scrubTimerRef = useRef(null);
+  const scrubStartTimeoutRef = useRef(null);
   const wasPlayingRef = useRef(false);
   const [tagOverlayOpen, setTagOverlayOpen] = useState(false);
   const [scrubHint, setScrubHint] = useState(null);
@@ -859,13 +860,23 @@ export default function MatchDetail() {
     const rect = e.currentTarget.getBoundingClientRect();
     const x = (e.touches[0].clientX - rect.left) / rect.width;
     const y = (e.touches[0].clientY - rect.top) / rect.height;
-    if (y > 0.75) return; // onderste controls niet gebruiken
+    if (y < 0.15 || y > 0.75) return; // boven-/onderste controls niet gebruiken
     if (x < 0.25) {
       e.preventDefault();
-      startScrub("backward");
+      scrubStartTimeoutRef.current = setTimeout(() => startScrub("backward"), 400);
     } else if (x > 0.75) {
       e.preventDefault();
-      startScrub("forward");
+      scrubStartTimeoutRef.current = setTimeout(() => startScrub("forward"), 400);
+    }
+  }
+
+  function handleVideoTouchEnd() {
+    if (scrubStartTimeoutRef.current) {
+      clearTimeout(scrubStartTimeoutRef.current);
+      scrubStartTimeoutRef.current = null;
+    }
+    if (scrubTimerRef.current) {
+      endScrub();
     }
   }
 
@@ -1033,14 +1044,14 @@ export default function MatchDetail() {
                     controls
                     playsInline
                     disablePictureInPicture
-                    className={tagOverlayOpen ? "w-full h-full" : "w-full aspect-video"}
-                    style={{ objectFit: "contain", display: "block", background: "black" }}
+                    className={tagOverlayOpen ? "w-full h-full select-none" : "w-full aspect-video select-none"}
+                    style={{ objectFit: "contain", display: "block", background: "black", userSelect: "none", WebkitUserSelect: "none", WebkitTouchCallout: "none" }}
                     src={currentSrc || null}
                     onPlay={() => setPlaying(true)}
                     onPause={() => setPlaying(false)}
                     onTouchStart={handleVideoTouchStart}
-                    onTouchEnd={endScrub}
-                    onTouchCancel={endScrub}
+                    onTouchEnd={handleVideoTouchEnd}
+                    onTouchCancel={handleVideoTouchEnd}
                   />
                   <div className="absolute inset-0 z-10 flex items-start pointer-events-none">
                     <div

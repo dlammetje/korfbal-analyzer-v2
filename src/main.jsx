@@ -53,9 +53,9 @@ window.addEventListener('unhandledrejection', (event) => {
   console.error('Unhandled promise rejection:', event.reason);
 });
 
-// Registreer service worker voor PWA
+// Verwijder oude service workers (kunnen een zwart scherm veroorzaken zonder build tool)
 if ('serviceWorker' in navigator) {
-  navigator.serviceWorker.register('/sw.js')
-    .then((reg) => console.log('Service worker registered:', reg.scope))
-    .catch((err) => console.error('Service worker registration failed:', err));
+  navigator.serviceWorker.getRegistrations()
+    .then((registrations) => registrations.forEach((reg) => reg.unregister()))
+    .catch((err) => console.error('Service worker unregister failed:', err));
 }

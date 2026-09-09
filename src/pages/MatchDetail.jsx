@@ -854,6 +854,21 @@ export default function MatchDetail() {
     }
   }
 
+  function handleVideoTouchStart(e) {
+    if (!videoRef.current || !e.touches[0]) return;
+    const rect = e.currentTarget.getBoundingClientRect();
+    const x = (e.touches[0].clientX - rect.left) / rect.width;
+    const y = (e.touches[0].clientY - rect.top) / rect.height;
+    if (y > 0.75) return; // onderste controls niet gebruiken
+    if (x < 0.25) {
+      e.preventDefault();
+      startScrub("backward");
+    } else if (x > 0.75) {
+      e.preventDefault();
+      startScrub("forward");
+    }
+  }
+
   function openTagFullscreen() {
     setTagOverlayOpen(true);
   }
@@ -1016,11 +1031,16 @@ export default function MatchDetail() {
                   <video
                     ref={videoRef}
                     controls
+                    playsInline
+                    disablePictureInPicture
                     className={tagOverlayOpen ? "w-full h-full" : "w-full aspect-video"}
                     style={{ objectFit: "contain", display: "block", background: "black" }}
                     src={currentSrc || null}
                     onPlay={() => setPlaying(true)}
                     onPause={() => setPlaying(false)}
+                    onTouchStart={handleVideoTouchStart}
+                    onTouchEnd={endScrub}
+                    onTouchCancel={endScrub}
                   />
                   <div className="absolute inset-0 z-10 flex items-start pointer-events-none">
                     <div

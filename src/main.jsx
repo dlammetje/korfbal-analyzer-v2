@@ -52,3 +52,10 @@ window.addEventListener('error', (event) => {
 window.addEventListener('unhandledrejection', (event) => {
   console.error('Unhandled promise rejection:', event.reason);
 });
+
+// Registreer service worker voor PWA
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.register('/sw.js')
+    .then((reg) => console.log('Service worker registered:', reg.scope))
+    .catch((err) => console.error('Service worker registration failed:', err));
+}

@@ -1,14 +1,14 @@
 {
   "name": "Korfbal Analyzer",
   "short_name": "Korfbal",
-  "start_url": "/",
+  "start_url": "./",
   "display": "standalone",
   "background_color": "#0a0a0a",
   "theme_color": "#FF6124",
   "orientation": "portrait",
   "icons": [
     {
-      "src": "/KorfbalAnalyzer_LOGO_v1.svg",
+      "src": "KorfbalAnalyzer_LOGO_v1.svg",
       "sizes": "any",
       "type": "image/svg+xml",
       "purpose": "any maskable"

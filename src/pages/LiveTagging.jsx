@@ -13,20 +13,22 @@ function fmt(t) {
 
 // Simpele set aanvalsacties voor live taggen (allemaal met Raak/Mis-popup)
 const OFFENSE_ACTIONS = [
-  { id: "schot", label: "Schot", isChance: true },
-  { id: "doorloopbal", label: "Doorloopbal", isChance: true },
-  { id: "kleine_kans", label: "Kleine kans", isChance: true },
-  { id: "strafworp", label: "Strafworp", isChance: true },
-  { id: "vrije_bal", label: "Vrije bal", isChance: true },
+  { id: "schot_3m", label: "Schot >3m", isChance: true },
+  { id: "schot_6m", label: "Schot >6m", isChance: true },
+  { id: "schot_9m", label: "Schot >9m", isChance: true },
+  { id: "rebound_win", label: "Rebound (win)", isChance: false },
+  { id: "rebound_lose", label: "Rebound (Verlies)", isChance: false },
+  { id: "balverlies", label: "Balverlies", isChance: false },
 ];
 
-// Verdedigingsacties voor live taggen: alleen tegenstander-kansen met Raak/Mis-popup
+// Verdedigingsacties voor live taggen: tegenstander-kansen en verdediging
 const DEFENSE_ACTIONS = [
-  { id: "tegen_schot", label: "Tegenstander schot", isChance: true, opponentGoal: true },
-  { id: "tegen_doorloopbal", label: "Tegenstander doorloopbal", isChance: true, opponentGoal: true },
-  { id: "tegen_kleine_kans", label: "Tegenstander kleine kans", isChance: true, opponentGoal: true },
-  { id: "tegen_strafworp", label: "Tegenstander strafworp", isChance: true, opponentGoal: true },
-  { id: "tegen_vrije_bal", label: "Tegenstander vrije bal", isChance: true, opponentGoal: true },
+  { id: "tegen_schot_3m", label: "Tegenstander Schot >3m", isChance: true, opponentGoal: true },
+  { id: "tegen_schot_6m", label: "Tegenstander Schot >6m", isChance: true, opponentGoal: true },
+  { id: "tegen_schot_9m", label: "Tegenstander Schot >9m", isChance: true, opponentGoal: true },
+  { id: "rebound_def_win", label: "Rebound verd. (win)", isChance: false },
+  { id: "rebound_def_lose", label: "Rebound verd. (Verlies)", isChance: false },
+  { id: "balverlies", label: "Balverlies", isChance: false },
 ];
 
 export default function LiveTagging() {
@@ -264,10 +266,14 @@ export default function LiveTagging() {
     const isDefense = options.isDefense || false;
     const opponentGoal = !!config.opponentGoal;
 
+    const homePlayers = match.homeTeamId ? getTeamPlayers(match.homeTeamId) || [] : [];
+    const awayPlayers = match.awayTeamId ? getTeamPlayers(match.awayTeamId) || [] : [];
+    const ourTeamId = homePlayers.length ? match.homeTeamId : (awayPlayers.length ? match.awayTeamId : match.homeTeamId);
+
     const base = {
       matchId: match.id,
       playerId: selectedPlayerId || "",
-      teamId: opponentGoal ? "" : match.homeTeamId,
+      teamId: opponentGoal ? "" : ourTeamId,
       time: now,
       half: currentHalf,
       phase: isDefense || opponentGoal ? "defense" : "attack",

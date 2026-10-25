@@ -1,7 +1,7 @@
 // src/pages/MatchDetail.jsx
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
-import { Play, Pause, Upload, ChevronLeft, ChevronRight, Trash2, Star } from "lucide-react";
+import { Play, Pause, Upload, ChevronLeft, ChevronRight, Trash2, Star, Maximize2 } from "lucide-react";
 import { useAppData } from "../context/AppDataContext";
 import { useAuth } from "../context/AuthContext";
 import { db } from "../lib/firebaseClient";
@@ -15,32 +15,57 @@ const ZONES = [
 ];
 
 const ATTACK_ACTIONS = [
-  { id: "schot", label: "Schot", isChance: true },
-  { id: "doorloopbal", label: "Doorloopbal", isChance: true },
-  { id: "vrije_bal", label: "Vrije Bal", isChance: true },
-  { id: "strafworp", label: "Strafworp", isChance: true },
-  { id: "kleine_kans", label: "Kleine Kans", isChance: true },
+  { id: "schot_3m", label: "Schot >3m", isChance: true },
+  { id: "schot_6m", label: "Schot >6m", isChance: true },
+  { id: "schot_9m", label: "Schot >9m", isChance: true },
   { id: "rebound_win", label: "Rebound (win)", isChance: false },
-  { id: "rebound_lose", label: "Rebound (verlies)", isChance: false },
-  { id: "assist", label: "Assist / Aangeef", isChance: false },
+  { id: "rebound_lose", label: "Rebound (Verlies)", isChance: false },
   { id: "balverlies", label: "Balverlies", isChance: false },
 ];
 
 const DEFENSE_ACTIONS = [
+  { id: "rebound_def_win", label: "Rebound verd. (win)", isChance: false },
+  { id: "rebound_def_lose", label: "Rebound verd. (Verlies)", isChance: false },
+  { id: "balverlies", label: "Balverlies", isChance: false },
   { id: "verdedigd", label: "Verdedigd", isChance: false },
   { id: "onderschepping", label: "Onderschepping", isChance: false },
-  { id: "overname", label: "Overname", isChance: false },
-  { id: "rebound_def_win", label: "Rebound verd. (win)", isChance: false },
-  { id: "rebound_def_lose", label: "Rebound verd. (verlies)", isChance: false },
   { id: "overtreding", label: "Overtreding", isChance: false },
 ];
 
 const OPPONENT_GOALS = [
-  { id: "tegen_schot", label: "Tegenstander Schot" },
-  { id: "tegen_doorloopbal", label: "Tegenstander Doorloopbal" },
-  { id: "tegen_vrije_bal", label: "Tegenstander Vrije Bal" },
-  { id: "tegen_strafworp", label: "Tegenstander Strafworp" },
+  { id: "tegen_schot_3m", label: "Tegenstander Schot >3m" },
+  { id: "tegen_schot_6m", label: "Tegenstander Schot >6m" },
+  { id: "tegen_schot_9m", label: "Tegenstander Schot >9m" },
 ];
+
+export function formatActionLabel(actionId) {
+  if (!actionId) return "—";
+  const map = {
+    schot_3m: "Schot >3m",
+    schot_6m: "Schot >6m",
+    schot_9m: "Schot >9m",
+    schot: "Schot",
+    rebound_win: "Rebound (win)",
+    rebound_lose: "Rebound (Verlies)",
+    balverlies: "Balverlies",
+    tegen_schot_3m: "Tegenstander Schot >3m",
+    tegen_schot_6m: "Tegenstander Schot >6m",
+    tegen_schot_9m: "Tegenstander Schot >9m",
+    tegen_schot: "Tegenstander Schot",
+    rebound_def_win: "Rebound verd. (win)",
+    rebound_def_lose: "Rebound verd. (Verlies)",
+    verdedigd: "Verdedigd",
+    onderschepping: "Onderschepping",
+    overname: "Overname",
+    overtreding: "Overtreding",
+    assist: "Assist",
+    doorloopbal: "Doorloopbal",
+    kleine_kans: "Kleine Kans",
+    vrije_bal: "Vrije Bal",
+    strafworp: "Strafworp",
+  };
+  return map[actionId] || actionId.replaceAll("_", " ");
+}
 
 function fmt(t) {
   const m = Math.floor(t / 60);
@@ -102,16 +127,13 @@ export default function MatchDetail() {
   const [playing, setPlaying] = useState(false);
   const videoRef = useRef(null);
   const videoShellRef = useRef(null);
-  const scrubTimerRef = useRef(null);
-  const scrubStartTimeoutRef = useRef(null);
-  const wasPlayingRef = useRef(false);
   const [tagOverlayOpen, setTagOverlayOpen] = useState(false);
-  const [scrubHint, setScrubHint] = useState(null);
 
   // --- Tagging state ---
   const [phase, setPhase] = useState("attack");
   const [zone, setZone] = useState("Korfzone");
   const [playerId, setPlayerId] = useState("");
+  const [showBenchInFullscreen, setShowBenchInFullscreen] = useState(false);
   const [prePost, setPrePost] = useState({ pre: 4, post: 6 });
   const [chancePrompt, setChancePrompt] = useState(null);
   const [clipSavedFlash, setClipSavedFlash] = useState(null);
@@ -247,6 +269,7 @@ export default function MatchDetail() {
 
   const onFieldPlayers = lineup.onField;
   const benchPlayers = lineup.bench;
+  const activeFieldPlayers = onFieldPlayers.length > 0 ? onFieldPlayers : matchPlayers;
 
   // gefilterde clips op basis van speler-/actie-/favorieten-filter
   const filteredClips = useMemo(() => {
@@ -370,50 +393,49 @@ export default function MatchDetail() {
 
   useEffect(() => {
     function isTypingInInput(e) {
-      const tag = e.target.tagName;
-      const editable = e.target.isContentEditable;
+      const tag = e.target?.tagName;
+      const editable = e.target?.isContentEditable;
       return (
         editable ||
         tag === "INPUT" ||
         tag === "TEXTAREA" ||
-        tag === "SELECT" ||
-        tag === "VIDEO"
+        tag === "SELECT"
       );
     }
 
     function handleKeyDown(e) {
-      if (isTypingInInput(e)) return;
-
       const key = e.key;
 
-      if (key === " ") {
-        // Negeer auto-repeat zodat we maar één toggle per aanslag hebben
-        if (e.repeat) return;
-        e.preventDefault();
-        if (!videoRef.current) return;
-        if (videoRef.current.paused) {
-          videoRef.current.play();
-          setPlaying(true);
-        } else {
-          videoRef.current.pause();
-          setPlaying(false);
-        }
-        return;
-      }
-
       if (key === "ArrowLeft") {
+        if (isTypingInInput(e)) return;
+        e.preventDefault();
+        e.stopPropagation();
         if (videoRef.current) {
-          videoRef.current.currentTime -= 3;
+          videoRef.current.currentTime = Math.max(0, (videoRef.current.currentTime || 0) - 3);
         }
         return;
       }
 
       if (key === "ArrowRight") {
+        if (isTypingInInput(e)) return;
+        e.preventDefault();
+        e.stopPropagation();
         if (videoRef.current) {
-          videoRef.current.currentTime += 3;
+          videoRef.current.currentTime = (videoRef.current.currentTime || 0) + 3;
         }
         return;
       }
+
+      if (key === " ") {
+        if (isTypingInInput(e)) return;
+        if (e.repeat) return;
+        e.preventDefault();
+        e.stopPropagation();
+        toggleVideoPlayback();
+        return;
+      }
+
+      if (isTypingInInput(e)) return;
 
       if (key === "q" || key === "Q") {
         if (!matchPlayers.length) return;
@@ -456,28 +478,18 @@ export default function MatchDetail() {
         }
       };
 
-      if (key === "s" || key === "S") {
-        triggerAttackAction("schot");
+      if (key === "s" || key === "S" || key === "1") {
+        triggerAttackAction("schot_3m");
         return;
       }
 
-      if (key === "l" || key === "L") {
-        triggerAttackAction("doorloopbal");
+      if (key === "x" || key === "X" || key === "2") {
+        triggerAttackAction("schot_6m");
         return;
       }
 
-      if (key === "v" || key === "V") {
-        triggerAttackAction("vrije_bal");
-        return;
-      }
-
-      if (key === "p" || key === "P") {
-        triggerAttackAction("strafworp");
-        return;
-      }
-
-      if (key === "k" || key === "K") {
-        triggerAttackAction("kleine_kans");
+      if (key === "c" || key === "C" || key === "3") {
+        triggerAttackAction("schot_9m");
         return;
       }
 
@@ -507,8 +519,8 @@ export default function MatchDetail() {
 
     }
 
-    window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
+    window.addEventListener("keydown", handleKeyDown, { capture: true });
+    return () => window.removeEventListener("keydown", handleKeyDown, { capture: true });
   }, [matchPlayers, playerId, phase, zone, match, currentHalf]);
 
   // --- Actions / tagging ---
@@ -530,11 +542,13 @@ export default function MatchDetail() {
 
     const zoneToUse = fieldPosition ? inferZoneFromPosition(fieldPosition) : zone;
 
+    const ourTeamId = homeTeam?.id || awayTeam?.id || match.homeTeamId;
+
     const base = {
       matchId: match.id,
       // Gebruik altijd de geselecteerde speler zodat we ook bij tegenstander-kansen weten bij wie het gebeurde
       playerId: playerId,
-      teamId: opponent ? "" : match.homeTeamId, // eventueel uitbreiden met verdedigingsteam
+      teamId: opponent ? "" : ourTeamId, // gebruikt ons team ook bij uitwedstrijden
       time: now,
       half: currentHalf,
       phase: opponent ? "defense" : phase,
@@ -600,10 +614,12 @@ export default function MatchDetail() {
     const now = videoRef.current.currentTime || 0;
     const zoneToUse = fieldPosition ? inferZoneFromPosition(fieldPosition) : zone;
 
+    const ourTeamId = homeTeam?.id || awayTeam?.id || match.homeTeamId;
+
     const base = {
       matchId: match.id,
       playerId,
-      teamId: match.homeTeamId,
+      teamId: ourTeamId,
       time: now,
       half: currentHalf,
       phase: phase || "attack",
@@ -716,10 +732,12 @@ export default function MatchDetail() {
         isChance: true,
       };
 
+    const ourTeamId = homeTeam?.id || awayTeam?.id || match.homeTeamId;
+
     const base = {
       matchId: match.id,
       playerId: chosenPlayerId,
-      teamId: match.homeTeamId,
+      teamId: ourTeamId,
       time: s.time || 0,
       half: s.half || 1,
       phase: "attack",
@@ -802,8 +820,15 @@ export default function MatchDetail() {
   function toggleVideoPlayback() {
     if (!videoRef.current) return;
     if (videoRef.current.paused) {
-      videoRef.current.play();
-      setPlaying(true);
+      const p = videoRef.current.play();
+      if (p && typeof p.then === "function") {
+        p.then(() => setPlaying(true)).catch((err) => {
+          console.warn("[Video] Play mislukt:", err);
+          setPlaying(false);
+        });
+      } else {
+        setPlaying(true);
+      }
     } else {
       videoRef.current.pause();
       setPlaying(false);
@@ -815,74 +840,47 @@ export default function MatchDetail() {
     videoRef.current.currentTime = Math.max(0, (videoRef.current.currentTime || 0) + seconds);
   }
 
-  function startScrub(direction) {
-    if (!videoRef.current) return;
-    wasPlayingRef.current = !videoRef.current.paused;
-    setScrubHint(direction === "forward" ? ">> 2x" : "<< 2x");
-
-    if (scrubTimerRef.current) {
-      clearInterval(scrubTimerRef.current);
-      scrubTimerRef.current = null;
-    }
-
-    if (direction === "forward") {
-      videoRef.current.playbackRate = 2;
-      videoRef.current.play()
-        .then(() => setPlaying(true))
-        .catch(() => {});
-    } else {
-      videoRef.current.pause();
-      setPlaying(false);
-      scrubTimerRef.current = setInterval(() => {
-        if (!videoRef.current) return;
-        videoRef.current.currentTime = Math.max(0, (videoRef.current.currentTime || 0) - 0.1);
-      }, 50);
-    }
-  }
-
-  function endScrub() {
-    if (scrubTimerRef.current) {
-      clearInterval(scrubTimerRef.current);
-      scrubTimerRef.current = null;
-    }
-    setScrubHint(null);
-    if (!videoRef.current) return;
-    videoRef.current.playbackRate = 1;
-    if (wasPlayingRef.current) {
-      videoRef.current.play()
-        .then(() => setPlaying(true))
-        .catch(() => {});
-    }
-  }
-
-  function handleVideoTouchStart(e) {
-    if (!videoRef.current || !e.touches[0]) return;
-    const rect = e.currentTarget.getBoundingClientRect();
-    const x = (e.touches[0].clientX - rect.left) / rect.width;
-    const y = (e.touches[0].clientY - rect.top) / rect.height;
-    if (y < 0.15 || y > 0.75) return; // boven-/onderste controls niet gebruiken
-    if (x < 0.25) {
-      e.preventDefault();
-      scrubStartTimeoutRef.current = setTimeout(() => startScrub("backward"), 400);
-    } else if (x > 0.75) {
-      e.preventDefault();
-      scrubStartTimeoutRef.current = setTimeout(() => startScrub("forward"), 400);
-    }
-  }
-
-  function handleVideoTouchEnd() {
-    if (scrubStartTimeoutRef.current) {
-      clearTimeout(scrubStartTimeoutRef.current);
-      scrubStartTimeoutRef.current = null;
-    }
-    if (scrubTimerRef.current) {
-      endScrub();
-    }
-  }
-
   function openTagFullscreen() {
     setTagOverlayOpen(true);
+    try {
+      const el = videoShellRef.current;
+      if (el) {
+        if (el.requestFullscreen) {
+          el.requestFullscreen().catch(() => {});
+        } else if (el.webkitRequestFullscreen) {
+          el.webkitRequestFullscreen();
+        }
+      }
+    } catch (_) {}
   }
+
+  function closeTagFullscreen() {
+    setTagOverlayOpen(false);
+    try {
+      if (document.fullscreenElement || document.webkitFullscreenElement) {
+        if (document.exitFullscreen) {
+          document.exitFullscreen().catch(() => {});
+        } else if (document.webkitExitFullscreen) {
+          document.webkitExitFullscreen();
+        }
+      }
+    } catch (_) {}
+  }
+
+  useEffect(() => {
+    function handleFullscreenChange() {
+      const isFs = !!(document.fullscreenElement || document.webkitFullscreenElement);
+      if (!isFs && tagOverlayOpen) {
+        setTagOverlayOpen(false);
+      }
+    }
+    document.addEventListener("fullscreenchange", handleFullscreenChange);
+    document.addEventListener("webkitfullscreenchange", handleFullscreenChange);
+    return () => {
+      document.removeEventListener("fullscreenchange", handleFullscreenChange);
+      document.removeEventListener("webkitfullscreenchange", handleFullscreenChange);
+    };
+  }, [tagOverlayOpen]);
 
   const formatTeamName = (teamObj, teamId) => {
     if (teamObj?.name) return teamObj.name;
@@ -1026,130 +1024,278 @@ export default function MatchDetail() {
             </div>
           )}
 
-          {/* VIDEO */}
-          <div ref={videoShellRef} className={tagOverlayOpen ? "fixed inset-0 z-[9000] bg-black flex flex-col" : "relative bg-black border border-neutral-800 rounded-2xl overflow-hidden"} style={{colorScheme:"normal"}}>
-            {(() => {
-              const currentSrc = currentHalf === 1 ? src1 : src2;
-              if (!currentSrc) {
-                return (
-                  <div className="w-full aspect-video bg-black flex items-center justify-center text-neutral-500 text-sm">
-                    Beelden nog niet geüpload voor deze helft.
-                  </div>
-                );
-              }
-              return (
-                <>
-                  <video
-                    ref={videoRef}
-                    controls
-                    playsInline
-                    disablePictureInPicture
-                    className={tagOverlayOpen ? "w-full h-full select-none" : "w-full aspect-video select-none"}
-                    style={{ objectFit: "contain", display: "block", background: "black", userSelect: "none", WebkitUserSelect: "none", WebkitTouchCallout: "none" }}
-                    src={currentSrc || null}
-                    onPlay={() => setPlaying(true)}
-                    onPause={() => setPlaying(false)}
-                    onTouchStart={handleVideoTouchStart}
-                    onTouchEnd={handleVideoTouchEnd}
-                    onTouchCancel={handleVideoTouchEnd}
-                  />
-                  <div className="absolute inset-0 z-10 flex items-start pointer-events-none">
-                    <div
-                      className="w-1/4 h-3/4 pointer-events-auto touch-none"
-                      onPointerDown={() => startScrub("backward")}
-                      onPointerUp={endScrub}
-                      onPointerLeave={endScrub}
-                      onPointerCancel={endScrub}
-                    />
-                    <div className="w-1/2 h-3/4" />
-                    <div
-                      className="w-1/4 h-3/4 pointer-events-auto touch-none"
-                      onPointerDown={() => startScrub("forward")}
-                      onPointerUp={endScrub}
-                      onPointerLeave={endScrub}
-                      onPointerCancel={endScrub}
-                    />
-                  </div>
-                  {scrubHint && (
-                    <div className="absolute left-1/2 top-1/2 z-30 -translate-x-1/2 -translate-y-1/2 rounded-2xl bg-black/80 px-6 py-3 text-2xl font-bold text-white backdrop-blur pointer-events-none">
-                      {scrubHint}
-                    </div>
-                  )}
-                </>
-              );
-            })()}
-
-            {tagOverlayOpen && (
-              <div className="absolute inset-0 z-20 pointer-events-none">
-                <div className="absolute left-4 top-4 flex flex-wrap items-center gap-2 pointer-events-auto">
-                  <button
-                    type="button"
-                    onClick={toggleVideoPlayback}
-                    className="inline-flex items-center gap-2 rounded-xl bg-[#FF6124] px-4 py-2 text-sm font-semibold text-white shadow-lg"
-                  >
-                    {playing ? <Pause size={16} /> : <Play size={16} />}
-                    {playing ? "Pauze" : "Play"}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => seekVideo(-5)}
-                    className="inline-flex items-center gap-1 rounded-xl bg-black/75 px-3 py-2 text-sm text-white ring-1 ring-white/15"
-                  >
-                    <ChevronLeft size={16} /> 5 sec
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => seekVideo(5)}
-                    className="inline-flex items-center gap-1 rounded-xl bg-black/75 px-3 py-2 text-sm text-white ring-1 ring-white/15"
-                  >
-                    5 sec <ChevronRight size={16} />
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setTagOverlayOpen((v) => !v)}
-                    className="rounded-xl bg-black/75 px-3 py-2 text-sm text-white ring-1 ring-white/15"
-                  >
-                    ✕ Sluiten
-                  </button>
-                </div>
-
-                {/* Mini zone-map links */}
-                <div className="absolute left-4 top-1/2 z-30 w-64 -translate-y-1/2 pointer-events-auto">
-                  <FieldHeatmap
-                    onSelect={({ x, y }) => {
-                      const pos = { x, y };
-                      setFieldPosition(pos);
-                      setZone(inferZoneFromPosition(pos));
-                    }}
-                    selectedPosition={fieldPosition}
-                    maxWidth="max-w-64"
-                    hideHint
-                  />
-                </div>
-
-                {/* Tagging panel onderaan */}
-                <div className="absolute bottom-4 left-4 right-4 max-h-[46vh] overflow-y-auto rounded-2xl border border-white/10 bg-black/80 p-4 shadow-2xl backdrop-blur pointer-events-auto">
-                  <div className="mb-3 grid grid-cols-1 gap-3 md:grid-cols-2">
-                    <div>
-                      <label className="mb-1 block text-xs text-neutral-300">Speler</label>
-                      <select
-                        value={playerId}
-                        onChange={(e) => setPlayerId(e.target.value)}
-                        className="w-full rounded-xl border border-neutral-700 bg-neutral-950 px-3 py-2 text-sm text-white"
+          {/* VIDEO & FULLSCREEN SHELL */}
+          <div
+            ref={videoShellRef}
+            className={
+              tagOverlayOpen
+                ? "fixed inset-0 z-[9000] bg-neutral-950 flex flex-col overflow-hidden select-none"
+                : "relative bg-black border border-neutral-800 rounded-2xl overflow-hidden"
+            }
+            style={{ colorScheme: "normal" }}
+          >
+            {tagOverlayOpen ? (
+              <>
+                {/* FULLSCREEN BOVENBALK */}
+                <div className="shrink-0 flex flex-wrap items-center justify-between gap-2 px-4 py-2 bg-neutral-900 border-b border-neutral-800 z-30">
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={toggleVideoPlayback}
+                      className="inline-flex items-center gap-2 rounded-xl bg-[#FF6124] px-4 py-1.5 text-xs font-semibold text-white shadow hover:opacity-90 transition-opacity"
+                    >
+                      {playing ? <Pause size={14} /> : <Play size={14} />}
+                      {playing ? "Pauze" : "Play"}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => seekVideo(-5)}
+                      className="inline-flex items-center gap-1 rounded-xl bg-neutral-800 px-3 py-1.5 text-xs text-neutral-200 hover:bg-neutral-700 transition-colors"
+                    >
+                      <ChevronLeft size={14} /> 5s
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => seekVideo(5)}
+                      className="inline-flex items-center gap-1 rounded-xl bg-neutral-800 px-3 py-1.5 text-xs text-neutral-200 hover:bg-neutral-700 transition-colors"
+                    >
+                      5s <ChevronRight size={14} />
+                    </button>
+                    <div className="flex items-center gap-1 bg-neutral-800/80 p-0.5 rounded-xl border border-neutral-700">
+                      <button
+                        type="button"
+                        onClick={() => setCurrentHalf(1)}
+                        className={`px-2.5 py-1 text-xs rounded-lg font-medium transition-colors ${
+                          currentHalf === 1 ? "bg-[#FF6124] text-white" : "text-neutral-400 hover:text-white"
+                        }`}
                       >
-                        <option value="">{matchPlayers.length ? "— kies speler —" : "Geen spelers gevonden"}</option>
-                        {matchPlayers.map((p) => (
-                          <option key={p.id} value={p.id}>{p.number ? `#${p.number} ` : ""}{p.name}</option>
-                        ))}
-                      </select>
+                        1e helft
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setCurrentHalf(2)}
+                        className={`px-2.5 py-1 text-xs rounded-lg font-medium transition-colors ${
+                          currentHalf === 2 ? "bg-[#FF6124] text-white" : "text-neutral-400 hover:text-white"
+                        }`}
+                      >
+                        2e helft
+                      </button>
                     </div>
-                    <div>
-                      <label className="mb-1 block text-xs text-neutral-300">Fase</label>
-                      <div className="grid grid-cols-2 gap-2">
-                        <button type="button" onClick={() => setPhase("attack")} className={`rounded-xl px-3 py-2 text-sm ${phase === "attack" ? "bg-[#FF6124] text-white" : "bg-neutral-900 text-neutral-300"}`}>Aanval</button>
-                        <button type="button" onClick={() => setPhase("defense")} className={`rounded-xl px-3 py-2 text-sm ${phase === "defense" ? "bg-blue-600 text-white" : "bg-neutral-900 text-neutral-300"}`}>Verdediging</button>
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={closeTagFullscreen}
+                      className="rounded-xl bg-neutral-800 px-3 py-1.5 text-xs text-neutral-200 hover:bg-neutral-700 transition-colors"
+                    >
+                      ✕ Sluiten
+                    </button>
+                  </div>
+                </div>
+
+                {/* MIDDENSECTIE MET VIDEO & GROTE VELDLOCATIE NAAST ELKAAR */}
+                <div className="flex-1 min-h-0 relative flex flex-col md:flex-row items-center justify-center gap-3 md:gap-4 p-2 md:p-3 bg-black overflow-hidden">
+                  {/* VIDEO CONTAINER */}
+                  <div className="flex-1 min-h-0 w-full h-full flex items-center justify-center relative overflow-hidden">
+                    {(() => {
+                      const currentSrc = currentHalf === 1 ? src1 : src2;
+                      if (!currentSrc) {
+                        return (
+                          <div className="text-neutral-500 text-sm">
+                            Beelden nog niet geüpload voor deze helft.
+                          </div>
+                        );
+                      }
+                      return (
+                        <video
+                          ref={videoRef}
+                          controls
+                          playsInline
+                          className="max-h-full max-w-full w-auto h-auto object-contain mx-auto block shadow-2xl rounded-xl"
+                          src={currentSrc || null}
+                          onPlay={() => setPlaying(true)}
+                          onPause={() => setPlaying(false)}
+                          onEnded={() => setPlaying(false)}
+                        />
+                      );
+                    })()}
+
+                    {/* Toast vinkje — rechtsboven in de video */}
+                    {clipSavedFlash && (
+                      <div
+                        className="absolute top-3 right-3 z-30 flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-bold text-white shadow-lg pointer-events-none"
+                        style={{
+                          backgroundColor: clipSavedFlash === "goal" ? "#16a34a" : clipSavedFlash === "miss" ? "#dc2626" : "#16a34a",
+                          animation: "fadeInOut 2.2s ease forwards",
+                        }}
+                      >
+                        {clipSavedFlash === "goal" ? "✓ Raak" : clipSavedFlash === "miss" ? "✗ Mis" : "✓ Opgeslagen"}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* GROTE CONSTANT ZICHTBARE VELDLOCATIE */}
+                  <div className="w-full md:w-80 lg:w-[420px] xl:w-[460px] shrink-0 bg-neutral-900/95 border border-neutral-800 rounded-2xl p-3 shadow-2xl flex flex-col justify-center">
+                    <div className="flex items-center justify-between mb-2">
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs font-semibold uppercase tracking-wider text-neutral-300">
+                          Veldlocatie
+                        </span>
+                        {zone && (
+                          <span className="text-xs font-medium text-[#FF6124] bg-[#FF6124]/15 border border-[#FF6124]/40 px-2 py-0.5 rounded-md">
+                            {zone}
+                          </span>
+                        )}
+                      </div>
+                      {fieldPosition && (
+                        <button
+                          type="button"
+                          onClick={() => setFieldPosition(null)}
+                          className="text-[11px] text-neutral-400 hover:text-white underline"
+                        >
+                          Wissen
+                        </button>
+                      )}
+                    </div>
+
+                    <FieldHeatmap
+                      points={fieldPoints}
+                      onSelect={({ x, y }) => {
+                        const pos = { x, y };
+                        setFieldPosition(pos);
+                        setZone(inferZoneFromPosition(pos));
+                      }}
+                      selectedPosition={fieldPosition}
+                      maxWidth="w-full"
+                      hideHint
+                    />
+                  </div>
+                </div>
+
+                {/* Tagging panel onderaan (zit netjes onder het beeld) */}
+                <div className="shrink-0 bg-neutral-900 border-t border-neutral-800 p-3 sm:p-4 space-y-2.5 z-20 max-h-[48vh] overflow-y-auto">
+                  {/* SPELERS IN HET VELD ALS BLOKJES */}
+                  <div>
+                    <div className="mb-1.5 flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs font-semibold uppercase tracking-wider text-neutral-300">
+                          Spelers in het veld
+                        </span>
+                        {playerId && (
+                          <span className="text-xs font-medium text-[#FF6124] bg-[#FF6124]/15 border border-[#FF6124]/40 px-2 py-0.5 rounded-lg flex items-center gap-1.5">
+                            Geselecteerd: {matchPlayers.find((p) => p.id === playerId)?.name || "Speler"}
+                            <button
+                              type="button"
+                              onClick={() => setPlayerId("")}
+                              className="text-neutral-400 hover:text-white text-xs ml-0.5"
+                              title="Deselecteer"
+                            >
+                              ✕
+                            </button>
+                          </span>
+                        )}
+                      </div>
+                      {benchPlayers.length > 0 && (
+                        <button
+                          type="button"
+                          onClick={() => setShowBenchInFullscreen((v) => !v)}
+                          className="text-xs text-neutral-400 hover:text-[#FF6124] transition-colors"
+                        >
+                          {showBenchInFullscreen ? "Verberg bank" : `Toon bank (${benchPlayers.length})`}
+                        </button>
+                      )}
+                    </div>
+
+                    {/* Veldspelers blokjes naast elkaar */}
+                    <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-8 gap-2">
+                      {activeFieldPlayers.map((p) => {
+                        const isSelected = playerId === p.id;
+                        return (
+                          <button
+                            key={p.id}
+                            type="button"
+                            onClick={() => setPlayerId(isSelected ? "" : p.id)}
+                            className={`px-3 py-2.5 rounded-xl border text-xs sm:text-sm font-semibold transition-all text-center truncate ${
+                              isSelected
+                                ? "bg-[#FF6124] border-[#FF6124] text-white shadow-lg ring-2 ring-[#FF6124]/50 scale-[1.02]"
+                                : "bg-neutral-900 border-neutral-700 text-neutral-200 hover:border-[#FF6124]/60 hover:bg-neutral-800"
+                            }`}
+                            title={p.name}
+                          >
+                            {p.number ? <span className="opacity-75 mr-1 text-xs">#{p.number}</span> : null}
+                            {p.name}
+                          </button>
+                        );
+                      })}
+                      {activeFieldPlayers.length === 0 && (
+                        <div className="col-span-full text-xs text-neutral-500 py-2">
+                          Geen veldspelers gevonden. Voeg spelers toe aan de opstelling.
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Bankspelers optioneel tonen */}
+                    {showBenchInFullscreen && benchPlayers.length > 0 && (
+                      <div className="mt-2 pt-2 border-t border-neutral-800">
+                        <div className="text-[11px] text-neutral-400 mb-1.5 font-medium">Bankspelers</div>
+                        <div className="flex flex-wrap gap-2">
+                          {benchPlayers.map((p) => {
+                            const isSelected = playerId === p.id;
+                            return (
+                              <button
+                                key={p.id}
+                                type="button"
+                                onClick={() => setPlayerId(isSelected ? "" : p.id)}
+                                className={`px-2.5 py-1.5 rounded-xl border text-xs font-medium transition-all ${
+                                  isSelected
+                                    ? "bg-[#FF6124] border-[#FF6124] text-white shadow-md ring-1 ring-[#FF6124]/50"
+                                    : "bg-neutral-900 border-neutral-800 text-neutral-300 hover:border-neutral-600"
+                                }`}
+                              >
+                                {p.number ? `#${p.number} ` : ""}{p.name}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* FASE (AANVAL / VERDEDIGING) */}
+                  <div className="flex items-center justify-between pt-1">
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs font-semibold text-neutral-300">Fase:</span>
+                      <div className="inline-flex rounded-xl bg-neutral-900 p-0.5 border border-neutral-800">
+                        <button
+                          type="button"
+                          onClick={() => setPhase("attack")}
+                          className={`rounded-lg px-4 py-1.5 text-xs font-semibold transition-all ${
+                            phase === "attack"
+                              ? "bg-[#FF6124] text-white shadow"
+                              : "text-neutral-400 hover:text-white"
+                          }`}
+                        >
+                          Aanval
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setPhase("defense")}
+                          className={`rounded-lg px-4 py-1.5 text-xs font-semibold transition-all ${
+                            phase === "defense"
+                              ? "bg-blue-600 text-white shadow"
+                              : "text-neutral-400 hover:text-white"
+                          }`}
+                        >
+                          Verdediging
+                        </button>
                       </div>
                     </div>
+                    {!playerId && (
+                      <span className="text-[11px] text-amber-400/90 hidden sm:inline">
+                        Kies eerst een speler hierboven, en klik daarna de actie
+                      </span>
+                    )}
                   </div>
                   <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-5">
                     {(phase === "attack" ? ATTACK_ACTIONS : DEFENSE_ACTIONS).map((a) => (
@@ -1173,30 +1319,68 @@ export default function MatchDetail() {
                     </div>
                   )}
                 </div>
+              </>
+            ) : (
+              <>
+                {(() => {
+                  const currentSrc = currentHalf === 1 ? src1 : src2;
+                  if (!currentSrc) {
+                    return (
+                      <div className="w-full aspect-video bg-black flex items-center justify-center text-neutral-500 text-sm">
+                        Beelden nog niet geüpload voor deze helft.
+                      </div>
+                    );
+                  }
+                  return (
+                    <video
+                      ref={videoRef}
+                      controls
+                      playsInline
+                      className="w-full aspect-video select-none"
+                      style={{ objectFit: "contain", display: "block", background: "black" }}
+                      src={currentSrc || null}
+                      onPlay={() => setPlaying(true)}
+                      onPause={() => setPlaying(false)}
+                      onEnded={() => setPlaying(false)}
+                    />
+                  );
+                })()}
 
-              </div>
-            )}
+                {/* Toast vinkje — rechtsboven in de video */}
+                {clipSavedFlash && (
+                  <div
+                    className="absolute top-3 right-3 z-30 flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-bold text-white shadow-lg pointer-events-none"
+                    style={{
+                      backgroundColor: clipSavedFlash === "goal" ? "#16a34a" : clipSavedFlash === "miss" ? "#dc2626" : "#16a34a",
+                      animation: "fadeInOut 2.2s ease forwards",
+                    }}
+                  >
+                    {clipSavedFlash === "goal" ? "✓ Raak" : clipSavedFlash === "miss" ? "✗ Mis" : "✓ Opgeslagen"}
+                  </div>
+                )}
 
-            {!tagOverlayOpen && (
-              <div className="p-4 flex flex-wrap items-center gap-3 border-t border-neutral-800">
+                <div className="p-4 flex flex-wrap items-center gap-3 border-t border-neutral-800">
               <button
+                type="button"
                 onClick={toggleVideoPlayback}
-                className="px-4 py-2 rounded-xl bg-[#FF6124] text-white flex items-center gap-2"
+                className="px-4 py-2 rounded-xl bg-[#FF6124] text-white flex items-center gap-2 font-semibold hover:opacity-90 transition-opacity"
               >
                 {playing ? <Pause size={16} /> : <Play size={16} />}
-                {playing ? "Pause" : "Play"}
+                {playing ? "Pauze" : "Play"}
               </button>
 
               <button
+                type="button"
                 onClick={() => seekVideo(-3)}
-                className="flex items-center gap-1 bg-neutral-800 text-neutral-300 px-3 py-2 rounded-xl"
+                className="flex items-center gap-1 bg-neutral-800 text-neutral-300 px-3 py-2 rounded-xl hover:bg-neutral-700 transition-colors"
               >
                 <ChevronLeft size={14} /> 3s
               </button>
 
               <button
+                type="button"
                 onClick={() => seekVideo(3)}
-                className="flex items-center gap-1 bg-neutral-800 text-neutral-300 px-3 py-2 rounded-xl"
+                className="flex items-center gap-1 bg-neutral-800 text-neutral-300 px-3 py-2 rounded-xl hover:bg-neutral-700 transition-colors"
               >
                 3s <ChevronRight size={14} />
               </button>
@@ -1204,9 +1388,9 @@ export default function MatchDetail() {
               <button
                 type="button"
                 onClick={openTagFullscreen}
-                className="flex items-center gap-2 bg-[#FF6124] text-white px-4 py-2 rounded-xl font-semibold text-sm shadow hover:opacity-90"
+                className="flex items-center gap-2 bg-[#FF6124] text-white px-4 py-2 rounded-xl font-semibold text-sm shadow hover:opacity-90 transition-opacity"
               >
-                ⛶ Fullscreen taggen
+                <Maximize2 size={16} /> Fullscreen taggen
               </button>
 
               {/* Pre/Post (seconden) tussen scrub en helft-knoppen */}
@@ -1261,11 +1445,12 @@ export default function MatchDetail() {
                 </button>
               </div>
             </div>
-            )}
+          </>
+        )}
 
             {/* Raak/Mis popup — absolute binnen videoShell, werkt in fullscreen */}
             {chancePrompt && (
-              <div className="absolute inset-0 z-30 flex items-center justify-center bg-black/70">
+              <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/70">
                 <div className="bg-neutral-900 border-2 border-[#FF6124] rounded-2xl p-6 text-center space-y-4 max-w-sm w-full mx-4">
                   <h3 className="text-xl font-semibold text-[#FF6124]">{chancePrompt.action.label}</h3>
                   <p className="text-neutral-300">Wat was het resultaat van deze kans?</p>
@@ -1429,7 +1614,7 @@ export default function MatchDetail() {
                             )}
                           </td>
                           <td className="px-4 py-2">
-                            {c.actionType ? c.actionType.replaceAll("_", " ") : "—"}
+                            {formatActionLabel(c.actionType)}
                           </td>
                           <td className="px-4 py-2">
                             {isOpp && c.result === "opp_goal" && (
@@ -1495,101 +1680,103 @@ export default function MatchDetail() {
             </div>
           </div>
 
-          {/* AI-VOORGESTELDE CLIPS (dummy) */}
-          <div className="bg-[#FF6124]/10 border border-[#FF6124]/40 rounded-2xl p-4 space-y-3 shadow-[0_0_0_1px_rgba(0,0,0,0.4)]">
-            <div className="flex items-center justify-between gap-2">
-              <div>
-                <h3 className="text-[#FF6124] font-semibold text-sm tracking-wide">Voorgestelde clips (AI)</h3>
-                <p className="text-[11px] text-[#FF6124] font-semibold mt-0.5">
-                  KOMT BINNENKORT – DEZE AI-FUNCTIE WERKT NOG NIET IN PRODUCTIE.
-                </p>
-                <p className="text-xs text-neutral-300 mt-0.5">
-                  Testsectie voor AI-voorstellen: generateert voorbeeld-suggesties zodat je de flow kunt proberen.
-                </p>
+          {/* AI-VOORGESTELDE CLIPS (dummy) - momenteel onzichtbaar gemaakt */}
+          {false && (
+            <div className="bg-[#FF6124]/10 border border-[#FF6124]/40 rounded-2xl p-4 space-y-3 shadow-[0_0_0_1px_rgba(0,0,0,0.4)]">
+              <div className="flex items-center justify-between gap-2">
+                <div>
+                  <h3 className="text-[#FF6124] font-semibold text-sm tracking-wide">Voorgestelde clips (AI)</h3>
+                  <p className="text-[11px] text-[#FF6124] font-semibold mt-0.5">
+                    KOMT BINNENKORT – DEZE AI-FUNCTIE WERKT NOG NIET IN PRODUCTIE.
+                  </p>
+                  <p className="text-xs text-neutral-300 mt-0.5">
+                    Testsectie voor AI-voorstellen: generateert voorbeeld-suggesties zodat je de flow kunt proberen.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={generateDummySuggestions}
+                  className="px-3 py-1.5 rounded-xl bg-neutral-900/90 border border-[#FF6124] text-[#FF6124] text-xs hover:bg-[#FF6124]/20 whitespace-nowrap"
+                >
+                  Genereer test-suggesties
+                </button>
               </div>
-              <button
-                type="button"
-                onClick={generateDummySuggestions}
-                className="px-3 py-1.5 rounded-xl bg-neutral-900/90 border border-[#FF6124] text-[#FF6124] text-xs hover:bg-[#FF6124]/20 whitespace-nowrap"
-              >
-                Genereer test-suggesties
-              </button>
-            </div>
 
-            {aiSuggestions.length ? (
-              <div className="border-t border-neutral-800 pt-2 overflow-x-auto">
-                <table className="w-full text-xs bg-[#FF6124]/10 border border-[#FF6124]/40 rounded-xl overflow-hidden">
-                  <thead className="bg-[#FF6124]/20 text-[#FF6124]">
-                    <tr className="border-b border-[#FF6124]/40">
-                      <th className="text-left py-1.5 px-2">Tijd</th>
-                      <th className="text-left py-1.5 px-2">Helft</th>
-                      <th className="text-left py-1.5 px-2">Type</th>
-                      <th className="text-left py-1.5 px-2">Speler</th>
-                      <th className="text-right py-1.5 px-2">Acties</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {aiSuggestions.map((s) => (
-                      <tr key={s.id} className="border-t border-[#FF6124]/25 hover:bg-[#FF6124]/10">
-                        <td className="py-1.5 px-2 text-neutral-100">{fmt(s.time || 0)}</td>
-                        <td className="py-1.5 px-2 text-neutral-100">{s.half || 1}e</td>
-                        <td className="py-1.5 px-2 text-neutral-200">{s.type || "schot"}</td>
-                        <td className="py-1.5 px-2">
-                          <select
-                            value={s.playerId || ""}
-                            onChange={(e) => {
-                              const value = e.target.value;
-                              setAiSuggestions((prev) =>
-                                prev.map((x) => (x.id === s.id ? { ...x, playerId: value } : x))
-                              );
-                            }}
-                            className="bg-neutral-950/80 border border-neutral-700 rounded-lg px-2 py-1 text-[11px] text-neutral-100 max-w-[180px]"
-                          >
-                            <option value="">— kies speler —</option>
-                            {matchPlayers.map((p) => (
-                              <option key={p.id} value={p.id}>
-                                {p.number ? `#${p.number} ` : ""}
-                                {p.name}
-                              </option>
-                            ))}
-                          </select>
-                        </td>
-                        <td className="py-1.5 px-2 text-right space-x-2">
-                          <button
-                            type="button"
-                            onClick={() => playSuggestion(s)}
-                            className="text-xs px-2 py-1 rounded-lg border border-neutral-600 text-neutral-200 bg-neutral-900/70 hover:bg-neutral-800"
-                          >
-                            Speel
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => acceptSuggestion(s)}
-                            className="text-xs px-2 py-1 rounded-lg border border-neutral-600 text-neutral-100 bg-neutral-900/70 hover:bg-neutral-800"
-                          >
-                            Maak clip
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() =>
-                              setAiSuggestions((prev) => prev.filter((x) => x.id !== s.id))
-                            }
-                            className="text-xs px-2 py-1 rounded-lg border border-neutral-700 text-neutral-400 bg-neutral-900/70 hover:border-red-500 hover:text-red-400"
-                          >
-                            Verwijder
-                          </button>
-                        </td>
+              {aiSuggestions.length ? (
+                <div className="border-t border-neutral-800 pt-2 overflow-x-auto">
+                  <table className="w-full text-xs bg-[#FF6124]/10 border border-[#FF6124]/40 rounded-xl overflow-hidden">
+                    <thead className="bg-[#FF6124]/20 text-[#FF6124]">
+                      <tr className="border-b border-[#FF6124]/40">
+                        <th className="text-left py-1.5 px-2">Tijd</th>
+                        <th className="text-left py-1.5 px-2">Helft</th>
+                        <th className="text-left py-1.5 px-2">Type</th>
+                        <th className="text-left py-1.5 px-2">Speler</th>
+                        <th className="text-right py-1.5 px-2">Acties</th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            ) : (
-              <div className="text-xs text-neutral-500">
-                Nog geen suggesties. Klik op "Genereer test-suggesties" om de AI-flow te proberen.
-              </div>
-            )}
-          </div>
+                    </thead>
+                    <tbody>
+                      {aiSuggestions.map((s) => (
+                        <tr key={s.id} className="border-t border-[#FF6124]/25 hover:bg-[#FF6124]/10">
+                          <td className="py-1.5 px-2 text-neutral-100">{fmt(s.time || 0)}</td>
+                          <td className="py-1.5 px-2 text-neutral-100">{s.half || 1}e</td>
+                          <td className="py-1.5 px-2 text-neutral-200">{s.type || "schot"}</td>
+                          <td className="py-1.5 px-2">
+                            <select
+                              value={s.playerId || ""}
+                              onChange={(e) => {
+                                const value = e.target.value;
+                                setAiSuggestions((prev) =>
+                                  prev.map((x) => (x.id === s.id ? { ...x, playerId: value } : x))
+                                );
+                              }}
+                              className="bg-neutral-950/80 border border-neutral-700 rounded-lg px-2 py-1 text-[11px] text-neutral-100 max-w-[180px]"
+                            >
+                              <option value="">— kies speler —</option>
+                              {matchPlayers.map((p) => (
+                                <option key={p.id} value={p.id}>
+                                  {p.number ? `#${p.number} ` : ""}
+                                  {p.name}
+                                </option>
+                              ))}
+                            </select>
+                          </td>
+                          <td className="py-1.5 px-2 text-right space-x-2">
+                            <button
+                              type="button"
+                              onClick={() => playSuggestion(s)}
+                              className="text-xs px-2 py-1 rounded-lg border border-neutral-600 text-neutral-200 bg-neutral-900/70 hover:bg-neutral-800"
+                            >
+                              Speel
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => acceptSuggestion(s)}
+                              className="text-xs px-2 py-1 rounded-lg border border-neutral-600 text-neutral-100 bg-neutral-900/70 hover:bg-neutral-800"
+                            >
+                              Maak clip
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setAiSuggestions((prev) => prev.filter((x) => x.id !== s.id))
+                              }
+                              className="text-xs px-2 py-1 rounded-lg border border-neutral-700 text-neutral-400 bg-neutral-900/70 hover:border-red-500 hover:text-red-400"
+                            >
+                              Verwijder
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              ) : (
+                <div className="text-xs text-neutral-500">
+                  Nog geen suggesties. Klik op "Genereer test-suggesties" om de AI-flow te proberen.
+                </div>
+              )}
+            </div>
+          )}
 
           {/* SEQUENCES VOOR DEZE WEDSTRIJD */}
           <div className="bg-neutral-900 border border-neutral-800 rounded-2xl p-4 space-y-4">
@@ -1734,7 +1921,7 @@ export default function MatchDetail() {
                     );
                   })()}
                   <span className="text-neutral-500">
-                    {selectedClipForEdit.actionType || "actie"}
+                    {formatActionLabel(selectedClipForEdit.actionType)}
                   </span>
                 </div>
                 <div className="flex items-center gap-2">

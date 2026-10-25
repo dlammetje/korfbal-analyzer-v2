@@ -17,6 +17,35 @@ function fmt(t) {
   return `${m}:${s}`;
 }
 
+export function formatActionLabel(actionId) {
+  if (!actionId) return "—";
+  const map = {
+    schot_3m: "Schot >3m",
+    schot_6m: "Schot >6m",
+    schot_9m: "Schot >9m",
+    schot: "Schot",
+    rebound_win: "Rebound (win)",
+    rebound_lose: "Rebound (Verlies)",
+    balverlies: "Balverlies",
+    tegen_schot_3m: "Tegenstander Schot >3m",
+    tegen_schot_6m: "Tegenstander Schot >6m",
+    tegen_schot_9m: "Tegenstander Schot >9m",
+    tegen_schot: "Tegenstander Schot",
+    rebound_def_win: "Rebound verd. (win)",
+    rebound_def_lose: "Rebound verd. (Verlies)",
+    verdedigd: "Verdedigd",
+    onderschepping: "Onderschepping",
+    overname: "Overname",
+    overtreding: "Overtreding",
+    assist: "Assist",
+    doorloopbal: "Doorloopbal",
+    kleine_kans: "Kleine Kans",
+    vrije_bal: "Vrije Bal",
+    strafworp: "Strafworp",
+  };
+  return map[actionId] || actionId.replaceAll("_", " ");
+}
+
 export default function Statistics() {
   const { teams = [], matches = [], clips = [], substitutions = [], clipSequences = [] } = useAppData() || {};
   const { currentUser } = useAuth();
@@ -200,7 +229,12 @@ export default function Statistics() {
   }, [filtered, statsMode]);
 
   const playerStats = useMemo(() => {
-    const isShot = (c) => c.actionType === "schot" || c.actionType === "tegen_schot";
+    const isShot = (c) => typeof c.actionType === "string" && (
+      c.actionType.startsWith("schot") ||
+      c.actionType.startsWith("tegen_schot") ||
+      c.actionType === "schot" ||
+      c.actionType === "tegen_schot"
+    );
     const isChanceAction = (c) => [
       "doorloopbal",
       "kleine_kans",
@@ -234,6 +268,9 @@ export default function Statistics() {
       };
     };
 
+    const schot3m = countByType(["schot_3m", "tegen_schot_3m"]);
+    const schot6m = countByType(["schot_6m", "tegen_schot_6m"]);
+    const schot9m = countByType(["schot_9m", "tegen_schot_9m"]);
     const doorloop = countByType(["doorloopbal", "tegen_doorloopbal"]);
     const kleine = countByType(["kleine_kans", "tegen_kleine_kans"]);
     const vrijeBal = countByType(["vrije_bal", "tegen_vrije_bal"]);
@@ -350,7 +387,7 @@ export default function Statistics() {
       const row = ensure(c.player || "Onbekend");
 
       // Schoten
-      if (c.actionType === "schot") {
+      if (typeof c.actionType === "string" && (c.actionType.startsWith("schot") || c.actionType === "schot")) {
         row.shotAttempts += 1;
         if (c.result === "goal") row.shotGoals += 1;
       }
@@ -492,7 +529,7 @@ export default function Statistics() {
       const row = ensure(c.matchName || "Onbekende wedstrijd");
 
       // Schoten
-      if (c.actionType === "schot") {
+      if (typeof c.actionType === "string" && (c.actionType.startsWith("schot") || c.actionType === "schot")) {
         row.shotAttempts += 1;
         if (c.result === "goal") row.shotGoals += 1;
       }
@@ -688,7 +725,12 @@ export default function Statistics() {
           <Filter label="Team" value={selectedTeam} setter={setSelectedTeam} options={["all", ...allTeams]} />
           <Filter label="Speler" value={selectedPlayer} setter={setSelectedPlayer} options={["all", ...allPlayers]} />
           <Filter label="Zone" value={selectedZone} setter={setSelectedZone} options={["all", ...ZONES]} />
-          <Filter label="Actie" value={selectedAction} setter={setSelectedAction} options={["all", ...allActions]} />
+          <Filter
+            label="Actie"
+            value={selectedAction}
+            setter={setSelectedAction}
+            options={["all", ...allActions.map((a) => ({ value: a, label: formatActionLabel(a) }))]}
+          />
           <Filter label="Helft" value={selectedHalf} setter={setSelectedHalf} options={["all", "1", "2"]} />
           <Filter label="Resultaat" value={selectedResult} setter={setSelectedResult} options={["all", "goal", "miss", "opp_goal"]} />
           <Filter
@@ -841,7 +883,7 @@ export default function Statistics() {
             label="Actie (veld)"
             value={mapAction}
             setter={setMapAction}
-            options={["all", ...allActions]}
+            options={["all", ...allActions.map((a) => ({ value: a, label: formatActionLabel(a) }))]}
           />
           <Filter
             label="Resultaat (veld)"

@@ -1,6 +1,6 @@
 // src/pages/Matches.jsx
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { Play, Pause, Upload, ChevronLeft, ChevronRight, Plus, Trash2, FileText, Wrench } from "lucide-react";
+import { Play, Pause, Upload, ChevronLeft, ChevronRight, Plus, Trash2, FileText, Wrench, ArrowLeftRight } from "lucide-react";
 import { useAppData } from "../context/AppDataContext";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
@@ -14,32 +14,57 @@ const ZONES = [
 ];
 
 const ATTACK_ACTIONS = [
-  { id: "schot", label: "Schot", isChance: true },
-  { id: "doorloopbal", label: "Doorloopbal", isChance: true },
-  { id: "vrije_bal", label: "Vrije Bal", isChance: true },
-  { id: "strafworp", label: "Strafworp", isChance: true },
-  { id: "kleine_kans", label: "Kleine Kans", isChance: true },
+  { id: "schot_3m", label: "Schot >3m", isChance: true },
+  { id: "schot_6m", label: "Schot >6m", isChance: true },
+  { id: "schot_9m", label: "Schot >9m", isChance: true },
   { id: "rebound_win", label: "Rebound (win)", isChance: false },
-  { id: "rebound_lose", label: "Rebound (verlies)", isChance: false },
-  { id: "assist", label: "Assist / Aangeef", isChance: false },
+  { id: "rebound_lose", label: "Rebound (Verlies)", isChance: false },
   { id: "balverlies", label: "Balverlies", isChance: false },
 ];
 
 const DEFENSE_ACTIONS = [
+  { id: "rebound_def_win", label: "Rebound verd. (win)", isChance: false },
+  { id: "rebound_def_lose", label: "Rebound verd. (Verlies)", isChance: false },
+  { id: "balverlies", label: "Balverlies", isChance: false },
   { id: "verdedigd", label: "Verdedigd", isChance: false },
   { id: "onderschepping", label: "Onderschepping", isChance: false },
-  { id: "overname", label: "Overname", isChance: false },
-  { id: "rebound_def_win", label: "Rebound verd. (win)", isChance: false },
-  { id: "rebound_def_lose", label: "Rebound verd. (verlies)", isChance: false },
   { id: "overtreding", label: "Overtreding", isChance: false },
 ];
 
 const OPPONENT_GOALS = [
-  { id: "tegen_schot", label: "Tegenstander Schot" },
-  { id: "tegen_doorloopbal", label: "Tegenstander Doorloopbal" },
-  { id: "tegen_vrije_bal", label: "Tegenstander Vrije Bal" },
-  { id: "tegen_strafworp", label: "Tegenstander Strafworp" },
+  { id: "tegen_schot_3m", label: "Tegenstander Schot >3m" },
+  { id: "tegen_schot_6m", label: "Tegenstander Schot >6m" },
+  { id: "tegen_schot_9m", label: "Tegenstander Schot >9m" },
 ];
+
+export function formatActionLabel(actionId) {
+  if (!actionId) return "—";
+  const map = {
+    schot_3m: "Schot >3m",
+    schot_6m: "Schot >6m",
+    schot_9m: "Schot >9m",
+    schot: "Schot",
+    rebound_win: "Rebound (win)",
+    rebound_lose: "Rebound (Verlies)",
+    balverlies: "Balverlies",
+    tegen_schot_3m: "Tegenstander Schot >3m",
+    tegen_schot_6m: "Tegenstander Schot >6m",
+    tegen_schot_9m: "Tegenstander Schot >9m",
+    tegen_schot: "Tegenstander Schot",
+    rebound_def_win: "Rebound verd. (win)",
+    rebound_def_lose: "Rebound verd. (Verlies)",
+    verdedigd: "Verdedigd",
+    onderschepping: "Onderschepping",
+    overname: "Overname",
+    overtreding: "Overtreding",
+    assist: "Assist",
+    doorloopbal: "Doorloopbal",
+    kleine_kans: "Kleine Kans",
+    vrije_bal: "Vrije Bal",
+    strafworp: "Strafworp",
+  };
+  return map[actionId] || actionId.replaceAll("_", " ");
+}
 
 function fmt(t) {
   const m = Math.floor(t / 60);
@@ -114,6 +139,8 @@ export default function Matches() {
     location: "",
     seasonId: "",
     seasonName: "",
+    homeTeamId: "",
+    awayTeamId: "",
   });
 
   // Bewerkbare spelers voor geselecteerde wedstrijd
@@ -129,7 +156,16 @@ export default function Matches() {
 
   useEffect(() => {
     if (!editingMatch) {
-      setEditDraft({ date: "", homeScore: "", awayScore: "", location: "" });
+      setEditDraft({
+        date: "",
+        homeScore: "",
+        awayScore: "",
+        location: "",
+        seasonId: "",
+        seasonName: "",
+        homeTeamId: "",
+        awayTeamId: "",
+      });
       return;
     }
     setEditDraft({
@@ -139,6 +175,8 @@ export default function Matches() {
       location: editingMatch.location || "",
       seasonId: editingMatch.seasonId || "",
       seasonName: editingMatch.seasonName || "",
+      homeTeamId: editingMatch.homeTeamId || "",
+      awayTeamId: editingMatch.awayTeamId || "",
     });
   }, [editingMatch]);
 
@@ -267,28 +305,33 @@ export default function Matches() {
 
   const selectedSeasonOpponents = selectedSeason?.opponents || null;
 
-  // Tegenstanders van het geselecteerde seizoen gebruiken; anders de algemene tegenstanders van thuisteam
-  const awaySelectOpponents = newMatch.seasonId && Array.isArray(selectedSeasonOpponents) && selectedSeasonOpponents.length
+  const editSeason = useMemo(() => {
+    return allSeasons.find((s) => s.id === editDraft.seasonId) || null;
+  }, [allSeasons, editDraft.seasonId]);
+
+  const editSeasonTeam = useMemo(() => {
+    return editSeason ? teams.find((t) => t.id === editSeason.teamId) || null : null;
+  }, [editSeason, teams]);
+
+  const editSeasonOpponents = editSeason?.opponents || null;
+
+  // Tegenstanders van het geselecteerde seizoen gebruiken; anders de algemene tegenstanders van thuisteam of uitteam
+  const seasonOrTeamOpponents = newMatch.seasonId && Array.isArray(selectedSeasonOpponents) && selectedSeasonOpponents.length
     ? selectedSeasonOpponents
     : Array.isArray(homeTeamObj?.opponents) && homeTeamObj.opponents.length
     ? homeTeamObj.opponents
+    : Array.isArray(awayTeamObj?.opponents) && awayTeamObj.opponents.length
+    ? awayTeamObj.opponents
     : null;
 
-  const homeSelectOpponents = null;
-
-  // Zet thuisteam en speelveld automatisch bij seizoenswissel
+  // Zet speelveld (zaal/veld) automatisch bij seizoenswissel, maar overschrijf teams NIET
   useEffect(() => {
     if (!selectedSeason) return;
-    const seasonTeam = teams.find((t) => t.id === selectedSeason.teamId);
-    if (!seasonTeam) return;
     setNewMatch((m) => ({
       ...m,
-      homeTeamId: seasonTeam.id,
-      awayTeamId: m.awayTeamId && (selectedSeasonOpponents || []).includes(m.awayTeamId) ? m.awayTeamId : "",
-      seasonId: selectedSeason.id,
       phase: selectedSeason.part === "zaal" ? "zaal" : "veld",
     }));
-  }, [selectedSeason, teams, selectedSeasonOpponents]);
+  }, [selectedSeason]);
 
   // Notes uit matches initialiseren zodat ze blijven bestaan na reload
   useEffect(() => {
@@ -400,6 +443,10 @@ export default function Matches() {
     alert("Vul minimaal datum, thuisteam en uitteam in.");
     return;
   }
+  if (newMatch.homeTeamId === newMatch.awayTeamId) {
+    alert("Thuisteam en uitteam mogen niet hetzelfde team zijn.");
+    return;
+  }
 
   if (!Array.isArray(newMatch.players) || newMatch.players.length !== 8) {
     alert("Selecteer precies 8 basisspelers voor deze wedstrijd.");
@@ -446,10 +493,12 @@ export default function Matches() {
     if (!selectedMatch || !videoRef.current) return;
     const now = videoRef.current.currentTime || 0;
 
+    const ourTeamId = selectedHomeTeam?.id || selectedAwayTeam?.id || selectedMatch.homeTeamId;
+
     const base = {
       matchId: selectedMatch.id,
       playerId: opponent ? "" : playerId,
-      teamId: opponent ? "" : selectedMatch.homeTeamId,
+      teamId: opponent ? "" : ourTeamId,
       time: now,
       half: currentHalf,
       phase: opponent ? "defense" : phase,
@@ -513,13 +562,10 @@ export default function Matches() {
               onChange={e => {
                 const seasonId = e.target.value;
                 const season = allSeasons.find((s) => s.id === seasonId) || null;
-                const seasonTeam = season ? teams.find((t) => t.id === season.teamId) || null : null;
                 setNewMatch(m => ({
                   ...m,
                   seasonId,
-                  homeTeamId: seasonTeam ? seasonTeam.id : "",
-                  awayTeamId: "",
-                  phase: season?.part === "zaal" ? "zaal" : "veld",
+                  phase: season?.part === "zaal" ? "zaal" : (season?.part ? "veld" : m.phase),
                 }));
               }}
               className="w-full bg-neutral-800 border border-neutral-700 rounded-xl px-3 py-2 text-white text-sm"
@@ -535,40 +581,76 @@ export default function Matches() {
 
           {/* HOME TEAM */}
           <div>
-            <label className="text-xs text-neutral-400">Thuisteam</label>
+            <div className="flex items-center justify-between mb-1">
+              <label className="text-xs text-neutral-400">Thuisteam *</label>
+              <button
+                type="button"
+                onClick={() => setNewMatch(m => ({ ...m, homeTeamId: m.awayTeamId, awayTeamId: m.homeTeamId }))}
+                className="text-[11px] text-[#FF6124] hover:text-[#ff7a45] flex items-center gap-1 transition-colors"
+                title="Wissel thuisteam en uitteam om"
+              >
+                <ArrowLeftRight size={11} /> Wissel thuis/uit
+              </button>
+            </div>
             <select
               value={newMatch.homeTeamId}
-              onChange={e => setNewMatch(m => ({ ...m, homeTeamId: e.target.value, awayTeamId: selectedSeason ? "" : m.awayTeamId, seasonId: "" }))}
-              className="w-full bg-neutral-800 border border-neutral-700 rounded-xl px-3 py-2 text-white text-sm disabled:opacity-60"
-              disabled={!!selectedSeason}
+              onChange={e => setNewMatch(m => ({ ...m, homeTeamId: e.target.value }))}
+              className="w-full bg-neutral-800 border border-neutral-700 rounded-xl px-3 py-2 text-white text-sm"
             >
               <option value="">— Kies thuisteam —</option>
-              {teams.map(t => (
-                <option key={t.id} value={t.id}>{t.name}</option>
-              ))}
+              {selectedSeasonTeam && (
+                <optgroup label="Eigen team (seizoen)">
+                  <option value={selectedSeasonTeam.id}>{selectedSeasonTeam.name}</option>
+                </optgroup>
+              )}
+              {selectedSeasonOpponents && selectedSeasonOpponents.length > 0 && (
+                <optgroup label="Tegenstanders (seizoen)">
+                  {selectedSeasonOpponents.map((name, i) => (
+                    <option key={i} value={name}>{name}</option>
+                  ))}
+                </optgroup>
+              )}
+              {teams.filter(t => t.id !== selectedSeasonTeam?.id).length > 0 && (
+                <optgroup label={selectedSeasonTeam ? "Overige eigen teams" : "Eigen teams"}>
+                  {teams.filter(t => t.id !== selectedSeasonTeam?.id).map(t => (
+                    <option key={t.id} value={t.id}>{t.name}</option>
+                  ))}
+                </optgroup>
+              )}
             </select>
-            {selectedSeason && <p className="text-[10px] text-neutral-500 mt-1">Thuisteam wordt automatisch bepaald door het seizoen.</p>}
           </div>
 
           {/* AWAY TEAM */}
           <div>
-            <label className="text-xs text-neutral-400">Uitteam *</label>
+            <label className="text-xs text-neutral-400 block mb-1">Uitteam *</label>
             <select
               value={newMatch.awayTeamId}
               onChange={e => setNewMatch(m => ({ ...m, awayTeamId: e.target.value }))}
               className="w-full bg-neutral-800 border border-neutral-700 rounded-xl px-3 py-2 text-white text-sm"
             >
               <option value="">— Kies uitteam —</option>
-              {awaySelectOpponents
-                ? awaySelectOpponents.map((name, i) => (
+              {selectedSeasonTeam && (
+                <optgroup label="Eigen team (seizoen)">
+                  <option value={selectedSeasonTeam.id}>{selectedSeasonTeam.name}</option>
+                </optgroup>
+              )}
+              {selectedSeasonOpponents && selectedSeasonOpponents.length > 0 && (
+                <optgroup label="Tegenstanders (seizoen)">
+                  {selectedSeasonOpponents.map((name, i) => (
                     <option key={i} value={name}>{name}</option>
-                  ))
-                : teams.map(t => (
+                  ))}
+                </optgroup>
+              )}
+              {teams.filter(t => t.id !== selectedSeasonTeam?.id).length > 0 && (
+                <optgroup label={selectedSeasonTeam ? "Overige eigen teams" : "Eigen teams"}>
+                  {teams.filter(t => t.id !== selectedSeasonTeam?.id).map(t => (
                     <option key={t.id} value={t.id}>{t.name}</option>
                   ))}
+                </optgroup>
+              )}
             </select>
-            {newMatch.seasonId && !awaySelectOpponents?.length && (
-              <p className="text-[10px] text-red-400 mt-1">Geen tegenstanders voor dit seizoen. Voeg ze toe bij Teams & Spelers.</p>
+            {newMatch.seasonId && !selectedSeasonOpponents?.length && (
+              <p className="text-[10px] text-amber-400 mt-1">Geen tegenstanders voor dit seizoen ingesteld bij Teams & Spelers.</p>
             )}
           </div>
 
@@ -602,6 +684,7 @@ export default function Matches() {
               teams={teams}
               homeTeamId={newMatch.homeTeamId}
               awayTeamId={newMatch.awayTeamId}
+              seasonTeamId={selectedSeasonTeam?.id}
               selected={newMatch.players}
               onChange={ids => setNewMatch(m => ({ ...m, players: ids }))}
               type="all"
@@ -964,7 +1047,7 @@ export default function Matches() {
                           const p = teamPlayers.find((p) => p.id === c.playerId);
                           return p?.name || "Onbekend";
                         })()}</td>
-                        <td className="py-1 pr-2">{c.actionType || "-"}</td>
+                        <td className="py-1 pr-2">{formatActionLabel(c.actionType)}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -1191,6 +1274,110 @@ export default function Matches() {
                   ))}
                 </select>
               </div>
+
+              {/* TEAMS HEADER + SWITCH KNOP */}
+              <div className="md:col-span-2 flex items-center justify-between pt-1 border-t border-neutral-800">
+                <span className="text-xs font-semibold text-neutral-300">Teams</span>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setEditDraft((d) => ({
+                      ...d,
+                      homeTeamId: d.awayTeamId,
+                      awayTeamId: d.homeTeamId,
+                      homeScore: d.awayScore,
+                      awayScore: d.homeScore,
+                    }));
+                  }}
+                  className="text-xs text-[#FF6124] hover:text-[#ff7a45] flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-[#FF6124]/40 bg-[#FF6124]/10 transition-colors font-medium"
+                  title="Wissel thuisteam en uitteam (inclusief scores) om"
+                >
+                  <ArrowLeftRight size={13} /> Wissel thuis / uit
+                </button>
+              </div>
+
+              {/* HOME TEAM */}
+              <div>
+                <label className="text-xs text-neutral-400 block mb-1">Thuisteam *</label>
+                <select
+                  value={editDraft.homeTeamId}
+                  onChange={(e) => setEditDraft((d) => ({ ...d, homeTeamId: e.target.value }))}
+                  className="w-full bg-neutral-800 border border-neutral-700 rounded-xl px-3 py-2 text-white text-sm"
+                >
+                  <option value="">— Kies thuisteam —</option>
+                  {editSeasonTeam && (
+                    <optgroup label="Eigen team (seizoen)">
+                      <option value={editSeasonTeam.id}>{editSeasonTeam.name}</option>
+                    </optgroup>
+                  )}
+                  {editSeasonOpponents && editSeasonOpponents.length > 0 && (
+                    <optgroup label="Tegenstanders (seizoen)">
+                      {editSeasonOpponents.map((name, i) => (
+                        <option key={i} value={name}>{name}</option>
+                      ))}
+                    </optgroup>
+                  )}
+                  {teams.filter((t) => t.id !== editSeasonTeam?.id).length > 0 && (
+                    <optgroup label={editSeasonTeam ? "Overige eigen teams" : "Eigen teams"}>
+                      {teams
+                        .filter((t) => t.id !== editSeasonTeam?.id)
+                        .map((t) => (
+                          <option key={t.id} value={t.id}>{t.name}</option>
+                        ))}
+                    </optgroup>
+                  )}
+                  {editDraft.homeTeamId &&
+                    editDraft.homeTeamId !== editSeasonTeam?.id &&
+                    !(editSeasonOpponents || []).includes(editDraft.homeTeamId) &&
+                    !teams.some((t) => t.id === editDraft.homeTeamId) && (
+                      <optgroup label="Huidig team">
+                        <option value={editDraft.homeTeamId}>{formatTeamName(editDraft.homeTeamId, teams)}</option>
+                      </optgroup>
+                    )}
+                </select>
+              </div>
+
+              {/* AWAY TEAM */}
+              <div>
+                <label className="text-xs text-neutral-400 block mb-1">Uitteam *</label>
+                <select
+                  value={editDraft.awayTeamId}
+                  onChange={(e) => setEditDraft((d) => ({ ...d, awayTeamId: e.target.value }))}
+                  className="w-full bg-neutral-800 border border-neutral-700 rounded-xl px-3 py-2 text-white text-sm"
+                >
+                  <option value="">— Kies uitteam —</option>
+                  {editSeasonTeam && (
+                    <optgroup label="Eigen team (seizoen)">
+                      <option value={editSeasonTeam.id}>{editSeasonTeam.name}</option>
+                    </optgroup>
+                  )}
+                  {editSeasonOpponents && editSeasonOpponents.length > 0 && (
+                    <optgroup label="Tegenstanders (seizoen)">
+                      {editSeasonOpponents.map((name, i) => (
+                        <option key={i} value={name}>{name}</option>
+                      ))}
+                    </optgroup>
+                  )}
+                  {teams.filter((t) => t.id !== editSeasonTeam?.id).length > 0 && (
+                    <optgroup label={editSeasonTeam ? "Overige eigen teams" : "Eigen teams"}>
+                      {teams
+                        .filter((t) => t.id !== editSeasonTeam?.id)
+                        .map((t) => (
+                          <option key={t.id} value={t.id}>{t.name}</option>
+                        ))}
+                    </optgroup>
+                  )}
+                  {editDraft.awayTeamId &&
+                    editDraft.awayTeamId !== editSeasonTeam?.id &&
+                    !(editSeasonOpponents || []).includes(editDraft.awayTeamId) &&
+                    !teams.some((t) => t.id === editDraft.awayTeamId) && (
+                      <optgroup label="Huidig team">
+                        <option value={editDraft.awayTeamId}>{formatTeamName(editDraft.awayTeamId, teams)}</option>
+                      </optgroup>
+                    )}
+                </select>
+              </div>
+
               <div>
                 <label className="text-xs text-neutral-400 block mb-1">Datum</label>
                 <input
@@ -1239,10 +1426,20 @@ export default function Matches() {
               </button>
               <button
                 onClick={async () => {
+                  if (!editDraft.homeTeamId || !editDraft.awayTeamId) {
+                    alert("Vul zowel thuisteam als uitteam in.");
+                    return;
+                  }
+                  if (editDraft.homeTeamId === editDraft.awayTeamId) {
+                    alert("Thuisteam en uitteam mogen niet hetzelfde team zijn.");
+                    return;
+                  }
                   try {
                     await updateMatch(editingMatch.id, {
                       date: editDraft.date,
                       location: editDraft.location,
+                      homeTeamId: editDraft.homeTeamId,
+                      awayTeamId: editDraft.awayTeamId,
                       homeScore: Number(editDraft.homeScore ?? 0),
                       awayScore: Number(editDraft.awayScore ?? 0),
                       seasonId: editDraft.seasonId,
@@ -1280,7 +1477,7 @@ export default function Matches() {
   );
 }
 
-export function PlayersPicker({ teams, homeTeamId, awayTeamId, selected, onChange, type }) {
+export function PlayersPicker({ teams, homeTeamId, awayTeamId, seasonTeamId, selected, onChange, type }) {
   const homeTeam = teams.find(t => t.id === homeTeamId);
   const awayTeam = teams.find(t => t.id === awayTeamId);
 
@@ -1304,11 +1501,22 @@ export function PlayersPicker({ teams, homeTeamId, awayTeamId, selected, onChang
     }
   }
 
-  if (awayTeam) {
+  if (awayTeam && awayTeam.id !== homeTeam?.id) {
     const players = (type === "subs") ? [] : dedupe([...(awayTeam.players || [])]);
     const subs = (type === "players") ? [] : dedupe([...(awayTeam.subs || [])]);
     if (players.length || subs.length) {
       sections.push({ key: `away-${awayTeam.id}`, players, subs });
+    }
+  }
+
+  if (!homeTeam && !awayTeam && seasonTeamId) {
+    const sTeam = teams.find(t => t.id === seasonTeamId);
+    if (sTeam) {
+      const players = (type === "subs") ? [] : dedupe([...(sTeam.players || [])]);
+      const subs = (type === "players") ? [] : dedupe([...(sTeam.subs || [])]);
+      if (players.length || subs.length) {
+        sections.push({ key: `season-${sTeam.id}`, players, subs });
+      }
     }
   }
 

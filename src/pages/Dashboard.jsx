@@ -143,7 +143,7 @@ export default function Dashboard() {
 
   // FG% (schotefficiency)
   const fg = useMemo(() => {
-    const shots = baseClips.filter(c => c.actionType === "schot");
+    const shots = baseClips.filter(c => typeof c.actionType === "string" && (c.actionType.startsWith("schot") || c.actionType === "schot"));
     if (!shots.length) return 0;
     const goals = shots.filter(s => s.result === "goal").length;
     return Math.round((goals / shots.length) * 100);
@@ -206,8 +206,9 @@ export default function Dashboard() {
       .sort((a, b) => new Date(b.date) - new Date(a.date));
 
     const isChanceAction = (c) =>
-      c.actionType === "schot" ||
-      ["doorloopbal", "kleine_kans", "strafworp", "vrije_bal"].includes(c.actionType);
+      (typeof c.actionType === "string" && (c.actionType.startsWith("schot") || c.actionType === "schot")) ||
+      ["doorloopbal", "kleine_kans", "strafworp", "vrije_bal"].includes(c.actionType) ||
+      c.isChance === true;
 
     // Zoek de meest recente wedstrijd WAAR kansen voor zijn getagd
     let latestWithShots = null;

@@ -15,6 +15,35 @@ function StatCard({ title, value, color }) {
   );
 }
 
+function formatActionLabel(actionId) {
+  if (!actionId) return "—";
+  const map = {
+    schot_3m: "Schot >3m",
+    schot_6m: "Schot >6m",
+    schot_9m: "Schot >9m",
+    schot: "Schot",
+    rebound_win: "Rebound (win)",
+    rebound_lose: "Rebound (Verlies)",
+    balverlies: "Balverlies",
+    tegen_schot_3m: "Tegenstander Schot >3m",
+    tegen_schot_6m: "Tegenstander Schot >6m",
+    tegen_schot_9m: "Tegenstander Schot >9m",
+    tegen_schot: "Tegenstander Schot",
+    rebound_def_win: "Rebound verd. (win)",
+    rebound_def_lose: "Rebound verd. (Verlies)",
+    verdedigd: "Verdedigd",
+    onderschepping: "Onderschepping",
+    overname: "Overname",
+    overtreding: "Overtreding",
+    assist: "Assist",
+    doorloopbal: "Doorloopbal",
+    kleine_kans: "Kleine Kans",
+    vrije_bal: "Vrije Bal",
+    strafworp: "Strafworp",
+  };
+  return map[actionId] || actionId.replaceAll("_", " ");
+}
+
 function ZoneList({ title, zones }) {
   if (!zones.length) {
     return (
@@ -168,7 +197,8 @@ export default function PlayerProfile() {
   }, [decodedName]);
 
   const stats = useMemo(() => {
-    const shots = playerClips.filter((c) => c.actionType === "schot");
+    const isShot = (c) => typeof c.actionType === "string" && (c.actionType.startsWith("schot") || c.actionType === "schot");
+    const shots = playerClips.filter(isShot);
     const goals = shots.filter((c) => c.result === "goal");
     const misses = shots.filter((c) => c.result === "miss");
 
@@ -210,7 +240,8 @@ export default function PlayerProfile() {
     });
 
     playerClips.forEach((c) => {
-      if (c.actionType === "schot" && map[c.zone]) {
+      const isShot = typeof c.actionType === "string" && (c.actionType.startsWith("schot") || c.actionType === "schot");
+      if (isShot && map[c.zone]) {
         if (c.result === "goal") map[c.zone].goal += 1;
         if (c.result === "miss") map[c.zone].miss += 1;
       }
@@ -356,7 +387,7 @@ export default function PlayerProfile() {
                   <td className="py-2 pr-3 whitespace-nowrap text-neutral-200">{c.matchName}</td>
                   <td className="text-center px-3">{fmt(c.time || 0)}</td>
                   <td className="text-center px-3">{c.half || 1}</td>
-                  <td className="text-center px-3 text-neutral-200">{c.actionType}</td>
+                  <td className="text-center px-3 text-neutral-200">{formatActionLabel(c.actionType)}</td>
                   <td className="text-center px-3 text-neutral-200">{c.result || ""}</td>
                   <td className="text-center px-3 text-neutral-200">{c.zone || ""}</td>
                 </tr>

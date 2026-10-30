@@ -81,6 +81,7 @@ export default function MatchDetail() {
   const [userClubId, setUserClubId] = useState("");
 
   const [uploadStatus, setUploadStatus] = useState({ half1: null, half2: null });
+  const [uploadProgress, setUploadProgress] = useState({ half1: 0, half2: 0 });
   const [uploadError, setUploadError] = useState({ half1: null, half2: null });
 
   const {
@@ -933,94 +934,170 @@ export default function MatchDetail() {
         <div className="space-y-4">
           {/* UPLOAD BUTTONS - alleen tonen voor geautoriseerde e-mails */}
           {canUpload && (
-            <div className="flex gap-3 mb-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-4">
               {/* 1e HELFT */}
-              <label className="bg-neutral-900 border border-neutral-800 px-4 py-2 rounded-xl cursor-pointer hover:bg-neutral-800 disabled:opacity-50" 
-                     disabled={uploadStatus.half1 === 'uploading'}>
-                {uploadStatus.half1 === 'uploading' ? (
-                  'Bezig met uploaden...'
+              <div className="bg-neutral-900 border border-neutral-800 rounded-2xl p-3.5 space-y-2.5 shadow-sm">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-semibold text-neutral-300">Video 1e helft</span>
+                  {uploadStatus.half1 === "uploading" && (
+                    <span className="text-xs font-bold text-[#FF6124] animate-pulse">
+                      {uploadProgress.half1}%
+                    </span>
+                  )}
+                  {uploadStatus.half1 === "success" && (
+                    <span className="text-xs font-semibold text-green-400">✓ Geüpload</span>
+                  )}
+                  {uploadStatus.half1 === "error" && (
+                    <span className="text-xs font-semibold text-red-400">✕ Mislukt</span>
+                  )}
+                  {!uploadStatus.half1 && src1 && (
+                    <span className="text-[11px] text-neutral-400">Aanwezig</span>
+                  )}
+                </div>
+
+                {uploadStatus.half1 === "uploading" ? (
+                  <div className="space-y-1.5 pt-1">
+                    <div className="w-full bg-neutral-800 rounded-full h-2.5 overflow-hidden border border-neutral-700/60">
+                      <div
+                        className="bg-gradient-to-r from-[#FF6124] to-[#ff854d] h-full rounded-full transition-all duration-200"
+                        style={{ width: `${uploadProgress.half1}%` }}
+                      />
+                    </div>
+                    <div className="text-[11px] text-neutral-400 flex items-center justify-between font-mono">
+                      <span>Bezig met uploaden…</span>
+                      <span className="text-[#FF6124] font-semibold">{uploadProgress.half1}%</span>
+                    </div>
+                  </div>
                 ) : (
-                  <>
-                    <Upload size={16} className="inline-block mr-2" /> 1e helft
-                  </>
+                  <label className="flex items-center justify-center gap-2 bg-neutral-800 hover:bg-neutral-750 text-white text-xs font-medium px-3.5 py-2.5 rounded-xl cursor-pointer transition-colors border border-neutral-700 hover:border-[#FF6124]/50">
+                    <Upload size={14} />
+                    {src1 ? "1e helft vervangen" : "Video 1e helft uploaden"}
+                    <input
+                      type="file"
+                      accept="video/*"
+                      className="hidden"
+                      onChange={async (e) => {
+                        const file = e.target.files?.[0];
+                        if (!file) return;
+
+                        setUploadProgress((prev) => ({ ...prev, half1: 0 }));
+                        setUploadStatus((prev) => ({ ...prev, half1: "uploading" }));
+                        setUploadError((prev) => ({ ...prev, half1: null }));
+
+                        try {
+                          console.log("UPLOAD START →", match.id, "half1", file);
+                          const url = await uploadMatchVideo(
+                            match.id,
+                            "half1",
+                            file,
+                            (percent) => {
+                              setUploadProgress((prev) => ({ ...prev, half1: percent }));
+                            }
+                          );
+                          setSrc1(url);
+                          setUploadStatus((prev) => ({ ...prev, half1: "success" }));
+                        } catch (error) {
+                          console.error("Upload mislukt:", error);
+                          setUploadError((prev) => ({
+                            ...prev,
+                            half1: error.message || "Er is een fout opgetreden bij het uploaden",
+                          }));
+                          setUploadStatus((prev) => ({ ...prev, half1: "error" }));
+                        } finally {
+                          e.target.value = "";
+                        }
+                      }}
+                    />
+                  </label>
                 )}
-                <input
-                  type="file"
-                  accept="video/*"
-                  className="hidden"
-                  disabled={uploadStatus.half1 === 'uploading'}
-                  onChange={async (e) => {
-                    const file = e.target.files?.[0];
-                    if (!file) return;
 
-                    setUploadStatus(prev => ({ ...prev, half1: 'uploading' }));
-                    setUploadError(prev => ({ ...prev, half1: null }));
-
-                    try {
-                      console.log("UPLOAD START →", match.id, "half1", file);
-                      const url = await uploadMatchVideo(match.id, "half1", file);
-                      setSrc1(url);
-                      setUploadStatus(prev => ({ ...prev, half1: 'success' }));
-                    } catch (error) {
-                      console.error("Upload mislukt:", error);
-                      setUploadError(prev => ({ 
-                        ...prev, 
-                        half1: error.message || 'Er is een fout opgetreden bij het uploaden' 
-                      }));
-                      setUploadStatus(prev => ({ ...prev, half1: 'error' }));
-                    }
-                  }}
-                />
-              </label>
-
-              {/* Toon eventuele foutmeldingen */}
-              {uploadError.half1 && (
-                <div className="text-red-500 text-sm mt-1">{uploadError.half1}</div>
-              )}
+                {/* Toon eventuele foutmeldingen */}
+                {uploadError.half1 && (
+                  <div className="text-red-400 text-xs">{uploadError.half1}</div>
+                )}
+              </div>
 
               {/* 2e HELFT */}
-              <label className="bg-neutral-900 border border-neutral-800 px-4 py-2 rounded-xl cursor-pointer hover:bg-neutral-800 disabled:opacity-50"
-                     disabled={uploadStatus.half2 === 'uploading'}>
-                {uploadStatus.half2 === 'uploading' ? (
-                  'Bezig met uploaden...'
+              <div className="bg-neutral-900 border border-neutral-800 rounded-2xl p-3.5 space-y-2.5 shadow-sm">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-semibold text-neutral-300">Video 2e helft</span>
+                  {uploadStatus.half2 === "uploading" && (
+                    <span className="text-xs font-bold text-[#FF6124] animate-pulse">
+                      {uploadProgress.half2}%
+                    </span>
+                  )}
+                  {uploadStatus.half2 === "success" && (
+                    <span className="text-xs font-semibold text-green-400">✓ Geüpload</span>
+                  )}
+                  {uploadStatus.half2 === "error" && (
+                    <span className="text-xs font-semibold text-red-400">✕ Mislukt</span>
+                  )}
+                  {!uploadStatus.half2 && src2 && (
+                    <span className="text-[11px] text-neutral-400">Aanwezig</span>
+                  )}
+                </div>
+
+                {uploadStatus.half2 === "uploading" ? (
+                  <div className="space-y-1.5 pt-1">
+                    <div className="w-full bg-neutral-800 rounded-full h-2.5 overflow-hidden border border-neutral-700/60">
+                      <div
+                        className="bg-gradient-to-r from-[#FF6124] to-[#ff854d] h-full rounded-full transition-all duration-200"
+                        style={{ width: `${uploadProgress.half2}%` }}
+                      />
+                    </div>
+                    <div className="text-[11px] text-neutral-400 flex items-center justify-between font-mono">
+                      <span>Bezig met uploaden…</span>
+                      <span className="text-[#FF6124] font-semibold">{uploadProgress.half2}%</span>
+                    </div>
+                  </div>
                 ) : (
-                  <>
-                    <Upload size={16} className="inline-block mr-2" /> 2e helft
-                  </>
+                  <label className="flex items-center justify-center gap-2 bg-neutral-800 hover:bg-neutral-750 text-white text-xs font-medium px-3.5 py-2.5 rounded-xl cursor-pointer transition-colors border border-neutral-700 hover:border-[#FF6124]/50">
+                    <Upload size={14} />
+                    {src2 ? "2e helft vervangen" : "Video 2e helft uploaden"}
+                    <input
+                      type="file"
+                      accept="video/*"
+                      className="hidden"
+                      onChange={async (e) => {
+                        const file = e.target.files?.[0];
+                        if (!file) return;
+
+                        setUploadProgress((prev) => ({ ...prev, half2: 0 }));
+                        setUploadStatus((prev) => ({ ...prev, half2: "uploading" }));
+                        setUploadError((prev) => ({ ...prev, half2: null }));
+
+                        try {
+                          console.log("UPLOAD START →", match.id, "half2", file);
+                          const url = await uploadMatchVideo(
+                            match.id,
+                            "half2",
+                            file,
+                            (percent) => {
+                              setUploadProgress((prev) => ({ ...prev, half2: percent }));
+                            }
+                          );
+                          setSrc2(url);
+                          setUploadStatus((prev) => ({ ...prev, half2: "success" }));
+                        } catch (error) {
+                          console.error("Upload mislukt:", error);
+                          setUploadError((prev) => ({
+                            ...prev,
+                            half2: error.message || "Er is een fout opgetreden bij het uploaden",
+                          }));
+                          setUploadStatus((prev) => ({ ...prev, half2: "error" }));
+                        } finally {
+                          e.target.value = "";
+                        }
+                      }}
+                    />
+                  </label>
                 )}
-                <input
-                  type="file"
-                  accept="video/*"
-                  className="hidden"
-                  disabled={uploadStatus.half2 === 'uploading'}
-                  onChange={async (e) => {
-                    const file = e.target.files?.[0];
-                    if (!file) return;
 
-                    setUploadStatus(prev => ({ ...prev, half2: 'uploading' }));
-                    setUploadError(prev => ({ ...prev, half2: null }));
-
-                    try {
-                      console.log("UPLOAD START →", match.id, "half2", file);
-                      const url = await uploadMatchVideo(match.id, "half2", file);
-                      setSrc2(url);
-                      setUploadStatus(prev => ({ ...prev, half2: 'success' }));
-                    } catch (error) {
-                      console.error("Upload mislukt:", error);
-                      setUploadError(prev => ({ 
-                        ...prev, 
-                        half2: error.message || 'Er is een fout opgetreden bij het uploaden' 
-                      }));
-                      setUploadStatus(prev => ({ ...prev, half2: 'error' }));
-                    }
-                  }}
-                />
-              </label>
-
-              {/* Toon eventuele foutmeldingen */}
-              {uploadError.half2 && (
-                <div className="text-red-500 text-sm mt-1">{uploadError.half2}</div>
-              )}
+                {/* Toon eventuele foutmeldingen */}
+                {uploadError.half2 && (
+                  <div className="text-red-400 text-xs">{uploadError.half2}</div>
+                )}
+              </div>
             </div>
           )}
 

@@ -23,7 +23,7 @@ async function ensureFirebaseFns() {
   }
 }
 
-async function uploadMatchVideo(matchId, half, file) {
+async function uploadMatchVideo(matchId, half, file, onProgress) {
   if (!matchId || !half || !file) {
     console.error("Ongeldige parameters voor uploadMatchVideo", { matchId, half, file });
     throw new Error("Ongeldige parameters voor video-upload");
@@ -46,6 +46,9 @@ async function uploadMatchVideo(matchId, half, file) {
         (snap) => {
           const prog = (snap.bytesTransferred / snap.totalBytes) * 100;
           console.log(`Upload ${half}: ${prog.toFixed(0)}%`);
+          if (typeof onProgress === "function") {
+            onProgress(Math.min(100, Math.max(0, Math.round(prog))));
+          }
         },
         (err) => {
           console.error("Fout bij uploaden video:", err);

@@ -112,6 +112,7 @@ export function AppDataProvider({ children }) {
   const [clips, setClips] = useState([]);
   const [substitutions, setSubstitutions] = useState([]);
   const [clipSequences, setClipSequences] = useState([]);
+  const [videoUploads, setVideoUploads] = useState({});
 
   useEffect(() => {
     (async () => {
@@ -193,6 +194,59 @@ export function AppDataProvider({ children }) {
   useEffect(() => {
     if (!useFirestore) localStorage.setItem(LS_KEYS.SEQUENCES, JSON.stringify(clipSequences));
   }, [clipSequences, useFirestore]);
+
+  // Waarschuw bij herladen/sluiten zolang er een video-upload loopt
+  useEffect(() => {
+    const hasUploading = Object.values(videoUploads).some(
+      (u) => u && u.status === "uploading"
+    );
+    if (!hasUploading) return;
+
+    function handleBeforeUnload(e) {
+      e.preventDefault();
+      e.returnValue = "";
+    }
+
+    window.addEventListener("beforeunload", handleBeforeUnload);
+    return () => window.removeEventListener("beforeunload", handleBeforeUnload);
+  }, [videoUploads]);
+
+  async function startMatchVideoUpload(matchId, half, file) {
+    const key = `${matchId}:${half}`;
+    if (videoUploads[key] && videoUploads[key].status === "uploading") {
+      return null;
+    }
+
+    setVideoUploads((prev) => ({
+      ...prev,
+      [key]: { status: "uploading", progress: 0, error: null },
+    }));
+
+    try {
+      const url = await uploadMatchVideo(matchId, half, file, (p) => {
+        setVideoUploads((prev) => ({
+          ...prev,
+          [key]: { ...(prev[key] || {}), status: "uploading", progress: p, error: null },
+        }));
+      });
+      setVideoUploads((prev) => ({
+        ...prev,
+        [key]: { status: "success", progress: 100, error: null },
+      }));
+      return url;
+    } catch (e) {
+      console.error("Upload mislukt:", e);
+      setVideoUploads((prev) => ({
+        ...prev,
+        [key]: {
+          status: "error",
+          progress: prev[key] ? prev[key].progress : 0,
+          error: e && e.message ? e.message : "Er is een fout opgetreden bij het uploaden",
+        },
+      }));
+      return null;
+    }
+  }
 
   // === CRUD FUNCTIES ===
   async function addTeam({ name, opponents = [] }) {
@@ -276,6 +330,25 @@ export function AppDataProvider({ children }) {
       return true;
     } catch (e) {
       console.error("[Firestore] updateClipPosition fout:", e);
+      return false;
+    }
+  }
+
+  async function updateClip(clipId, updates) {
+    try {
+      if (!clipId || !updates || typeof updates !== "object") return false;
+      if (useFirestore) {
+        const { doc, updateDoc } = await ensureFirebaseFns();
+        await updateDoc(doc(db, "clips", clipId), updates);
+      }
+
+      setClips((prev) =>
+        prev.map((c) => (c.id === clipId ? { ...c, ...updates } : c))
+      );
+
+      return true;
+    } catch (e) {
+      console.error("[Firestore] updateClip fout:", e);
       return false;
     }
   }
@@ -664,6 +737,10 @@ export function AppDataProvider({ children }) {
         // 🔥 Altijd aanwezig
         players: Array.isArray(match.players) ? match.players : [],
         subs: Array.isArray(match.subs) ? match.subs : [],
+        vakken:
+          match.vakken && Array.isArray(match.vakken.vak1) && Array.isArray(match.vakken.vak2)
+            ? { vak1: match.vakken.vak1, vak2: match.vakken.vak2 }
+            : null,
         videoUrls: match.videoUrls || { half1: "", half2: "" },
 
         createdAt: useFirestore ? null : Date.now()
@@ -874,6 +951,7 @@ export function AppDataProvider({ children }) {
       addClip,
       deleteClip,
       updateClipPosition,
+      updateClip,
       getSequencesByMatch,
       addClipSequence,
       deleteClipSequence,
@@ -885,12 +963,14 @@ export function AppDataProvider({ children }) {
       saveMatchVideosLocally,
       loadMatchVideosLocally,
       uploadMatchVideo,
+      videoUploads,
+      startMatchVideoUpload,
 
       // helpers
       getTeamById,
       getTeamPlayers,
     }),
-    [ready, useFirestore, teams, matches, clips, substitutions, clipSequences]
+    [ready, useFirestore, teams, matches, clips, substitutions, clipSequences, videoUploads]
   );
 
   if (!ready) {

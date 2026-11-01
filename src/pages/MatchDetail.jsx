@@ -67,6 +67,11 @@ export function formatActionLabel(actionId) {
   return map[actionId] || actionId.replaceAll("_", " ");
 }
 
+const DEFAULT_PRE = 4;
+const DEFAULT_POST = 6;
+const clipPre = (c) => (typeof c.pre === "number" ? c.pre : DEFAULT_PRE);
+const clipPost = (c) => (typeof c.post === "number" ? c.post : DEFAULT_POST);
+
 function fmt(t) {
   const m = Math.floor(t / 60);
   const s = Math.floor(t % 60).toString().padStart(2, "0");
@@ -79,10 +84,6 @@ export default function MatchDetail() {
   const { currentUser } = useAuth();
 
   const [userClubId, setUserClubId] = useState("");
-
-  const [uploadStatus, setUploadStatus] = useState({ half1: null, half2: null });
-  const [uploadProgress, setUploadProgress] = useState({ half1: 0, half2: 0 });
-  const [uploadError, setUploadError] = useState({ half1: null, half2: null });
 
   const {
     ready,
@@ -97,7 +98,8 @@ export default function MatchDetail() {
     addSubstitution,
     deleteSubstitution,
     getSubsByMatch,
-    uploadMatchVideo,
+    videoUploads,
+    startMatchVideoUpload,
     clipSequences,
     getSequencesByMatch,
     addClipSequence,
@@ -105,12 +107,29 @@ export default function MatchDetail() {
     setClipSequenceForClip,
     setClipFavorite,
     updateClipPosition,
+    updateClip,
   } = useAppData() || {};
 
   const match = useMemo(
     () => matches.find((m) => m.id === matchId) || null,
     [matches, matchId]
   );
+
+  // Upload-status leeft in AppDataContext zodat hij behouden blijft bij navigatie
+  const uploadHalf1 = match && videoUploads ? videoUploads[`${match.id}:half1`] : null;
+  const uploadHalf2 = match && videoUploads ? videoUploads[`${match.id}:half2`] : null;
+  const uploadStatus = {
+    half1: uploadHalf1?.status || null,
+    half2: uploadHalf2?.status || null,
+  };
+  const uploadProgress = {
+    half1: uploadHalf1?.progress ?? 0,
+    half2: uploadHalf2?.progress ?? 0,
+  };
+  const uploadError = {
+    half1: uploadHalf1?.error || null,
+    half2: uploadHalf2?.error || null,
+  };
 
   const homeTeam = useMemo(
     () => (match ? teams.find((t) => t.id === match.homeTeamId) || null : null),
@@ -128,6 +147,7 @@ export default function MatchDetail() {
   const [playing, setPlaying] = useState(false);
   const videoRef = useRef(null);
   const videoShellRef = useRef(null);
+  const resumeRef = useRef(null);
   const [tagOverlayOpen, setTagOverlayOpen] = useState(false);
 
   // --- Tagging state ---
@@ -223,7 +243,7 @@ export default function MatchDetail() {
   // en alle geregistreerde wissels in de wedstrijd (ongeacht exacte videotijd)
   const lineup = useMemo(() => {
     if (!match || !matchPlayers.length) {
-      return { onField: [], bench: [] };
+      return { onField: [], bench: [], vak1: [], vak2: [] };
     }
 
     const startingIds = new Set(match.players || []);
@@ -237,10 +257,32 @@ export default function MatchDetail() {
       Array.from(allIds).filter((id) => !startingIds.has(id))
     );
 
+    // Vakindeling: gebruik opgeslagen vakken, anders splits match.players (eerste 4 / rest)
+    const playerIds = match.players || [];
+    let vak1Ids;
+    let vak2Ids;
+    if (match.vakken && Array.isArray(match.vakken.vak1) && Array.isArray(match.vakken.vak2)) {
+      vak1Ids = [...match.vakken.vak1];
+      vak2Ids = [...match.vakken.vak2];
+    } else {
+      vak1Ids = playerIds.slice(0, 4);
+      vak2Ids = playerIds.slice(4);
+    }
+
+    const toPlayers = (ids) =>
+      ids
+        .map((id) => matchPlayers.find((p) => p.id === id))
+        .filter(Boolean);
+
     if (!subs || !subs.length) {
       const onFieldPlayers = matchPlayers.filter((p) => onField.has(p.id));
       const benchPlayers = matchPlayers.filter((p) => bench.has(p.id));
-      return { onField: onFieldPlayers, bench: benchPlayers };
+      return {
+        onField: onFieldPlayers,
+        bench: benchPlayers,
+        vak1: toPlayers(vak1Ids),
+        vak2: toPlayers(vak2Ids),
+      };
     }
 
     const orderedSubs = [...subs].sort((a, b) => {
@@ -260,12 +302,29 @@ export default function MatchDetail() {
       if (s.inPlayer) {
         bench.delete(s.inPlayer);
         onField.add(s.inPlayer);
+
+        // Invaller neemt het vak (en de positie) van de uitgaande speler over
+        const idx1 = vak1Ids.indexOf(s.outPlayer);
+        const idx2 = vak2Ids.indexOf(s.outPlayer);
+        if (idx1 !== -1) {
+          vak1Ids[idx1] = s.inPlayer;
+        } else if (idx2 !== -1) {
+          vak2Ids[idx2] = s.inPlayer;
+        } else {
+          const target = vak1Ids.length <= vak2Ids.length ? vak1Ids : vak2Ids;
+          if (target.length < 4) target.push(s.inPlayer);
+        }
       }
     }
 
     const onFieldPlayers = matchPlayers.filter((p) => onField.has(p.id));
     const benchPlayers = matchPlayers.filter((p) => bench.has(p.id));
-    return { onField: onFieldPlayers, bench: benchPlayers };
+    return {
+      onField: onFieldPlayers,
+      bench: benchPlayers,
+      vak1: toPlayers(vak1Ids),
+      vak2: toPlayers(vak2Ids),
+    };
   }, [match, matchPlayers, subs]);
 
   const onFieldPlayers = lineup.onField;
@@ -562,6 +621,8 @@ export default function MatchDetail() {
       x: fieldPosition && typeof fieldPosition.x === "number" ? fieldPosition.x : null,
       y: fieldPosition && typeof fieldPosition.y === "number" ? fieldPosition.y : null,
       clubId: userClubId || null,
+      pre: prePost.pre,
+      post: prePost.post,
     };
 
     // Voor tegenstander-acties willen we ook altijd de Raak/Mis-popup tonen
@@ -633,6 +694,8 @@ export default function MatchDetail() {
       x: fieldPosition && typeof fieldPosition.x === "number" ? fieldPosition.x : null,
       y: fieldPosition && typeof fieldPosition.y === "number" ? fieldPosition.y : null,
       clubId: userClubId || null,
+      pre: prePost.pre,
+      post: prePost.post,
     };
 
     addClip(base);
@@ -640,7 +703,7 @@ export default function MatchDetail() {
 
   function playClip(c) {
     if (!videoRef.current) return;
-    const start = Math.max(0, c.time - prePost.pre);
+    const start = Math.max(0, c.time - clipPre(c));
 
     if ((c.half || 1) !== currentHalf) {
       setCurrentHalf(c.half || 1);
@@ -751,6 +814,8 @@ export default function MatchDetail() {
       x: fieldPosition && typeof fieldPosition.x === "number" ? fieldPosition.x : null,
       y: fieldPosition && typeof fieldPosition.y === "number" ? fieldPosition.y : null,
       clubId: userClubId || null,
+      pre: prePost.pre,
+      post: prePost.post,
     };
 
     if (action.isChance) {
@@ -774,7 +839,7 @@ export default function MatchDetail() {
       const current = playlistClips[playlistIndex];
       if (!current) return;
 
-      const clipEnd = (current.time || 0) + (prePost.post || 0);
+      const clipEnd = (current.time || 0) + clipPost(current);
       if (video.currentTime >= clipEnd - 0.1) {
         const nextIndex = playlistIndex + 1;
         if (nextIndex < playlistClips.length) {
@@ -788,7 +853,7 @@ export default function MatchDetail() {
 
     video.addEventListener("timeupdate", handleTimeUpdate);
     return () => video.removeEventListener("timeupdate", handleTimeUpdate);
-  }, [playlistActive, playlistIndex, playlistClips, prePost.post]);
+  }, [playlistActive, playlistIndex, playlistClips, tagOverlayOpen, currentHalf, src1, src2, match]);
 
   // Houd de huidige videotijd bij voor de wissel-opstelling
   useEffect(() => {
@@ -801,7 +866,7 @@ export default function MatchDetail() {
 
     video.addEventListener("timeupdate", handleTime);
     return () => video.removeEventListener("timeupdate", handleTime);
-  }, []);
+  }, [tagOverlayOpen, currentHalf, src1, src2, match]);
 
   function submitSub(outId, inId) {
     if (!match || !videoRef.current) return;
@@ -841,7 +906,33 @@ export default function MatchDetail() {
     videoRef.current.currentTime = Math.max(0, (videoRef.current.currentTime || 0) + seconds);
   }
 
+  function captureVideoState() {
+    if (!videoRef.current) return;
+    resumeRef.current = {
+      time: videoRef.current.currentTime || 0,
+      wasPlaying: !videoRef.current.paused,
+      half: currentHalf,
+    };
+  }
+
+  function applyResumeTo(video) {
+    const resume = resumeRef.current;
+    if (!resume || !video) return;
+    resumeRef.current = null;
+    if (resume.half !== currentHalf) return;
+    try {
+      video.currentTime = resume.time;
+    } catch (_) {}
+    if (resume.wasPlaying) {
+      const p = video.play();
+      if (p && typeof p.then === "function") {
+        p.then(() => setPlaying(true)).catch(() => setPlaying(false));
+      }
+    }
+  }
+
   function openTagFullscreen() {
+    captureVideoState();
     setTagOverlayOpen(true);
     try {
       const el = videoShellRef.current;
@@ -856,6 +947,7 @@ export default function MatchDetail() {
   }
 
   function closeTagFullscreen() {
+    captureVideoState();
     setTagOverlayOpen(false);
     try {
       if (document.fullscreenElement || document.webkitFullscreenElement) {
@@ -872,6 +964,7 @@ export default function MatchDetail() {
     function handleFullscreenChange() {
       const isFs = !!(document.fullscreenElement || document.webkitFullscreenElement);
       if (!isFs && tagOverlayOpen) {
+        captureVideoState();
         setTagOverlayOpen(false);
       }
     }
@@ -881,6 +974,15 @@ export default function MatchDetail() {
       document.removeEventListener("fullscreenchange", handleFullscreenChange);
       document.removeEventListener("webkitfullscreenchange", handleFullscreenChange);
     };
+  }, [tagOverlayOpen]);
+
+  // Als de video opnieuw mount (fullscreen aan/uit) en de metadata al geladen is,
+  // zet dan direct de opgeslagen positie terug.
+  useEffect(() => {
+    const video = videoRef.current;
+    if (video && resumeRef.current && video.readyState >= 1) {
+      applyResumeTo(video);
+    }
   }, [tagOverlayOpen]);
 
   const formatTeamName = (teamObj, teamId) => {
@@ -980,29 +1082,10 @@ export default function MatchDetail() {
                         const file = e.target.files?.[0];
                         if (!file) return;
 
-                        setUploadProgress((prev) => ({ ...prev, half1: 0 }));
-                        setUploadStatus((prev) => ({ ...prev, half1: "uploading" }));
-                        setUploadError((prev) => ({ ...prev, half1: null }));
-
                         try {
                           console.log("UPLOAD START →", match.id, "half1", file);
-                          const url = await uploadMatchVideo(
-                            match.id,
-                            "half1",
-                            file,
-                            (percent) => {
-                              setUploadProgress((prev) => ({ ...prev, half1: percent }));
-                            }
-                          );
-                          setSrc1(url);
-                          setUploadStatus((prev) => ({ ...prev, half1: "success" }));
-                        } catch (error) {
-                          console.error("Upload mislukt:", error);
-                          setUploadError((prev) => ({
-                            ...prev,
-                            half1: error.message || "Er is een fout opgetreden bij het uploaden",
-                          }));
-                          setUploadStatus((prev) => ({ ...prev, half1: "error" }));
+                          const url = await startMatchVideoUpload(match.id, "half1", file);
+                          if (url) setSrc1(url);
                         } finally {
                           e.target.value = "";
                         }
@@ -1062,29 +1145,10 @@ export default function MatchDetail() {
                         const file = e.target.files?.[0];
                         if (!file) return;
 
-                        setUploadProgress((prev) => ({ ...prev, half2: 0 }));
-                        setUploadStatus((prev) => ({ ...prev, half2: "uploading" }));
-                        setUploadError((prev) => ({ ...prev, half2: null }));
-
                         try {
                           console.log("UPLOAD START →", match.id, "half2", file);
-                          const url = await uploadMatchVideo(
-                            match.id,
-                            "half2",
-                            file,
-                            (percent) => {
-                              setUploadProgress((prev) => ({ ...prev, half2: percent }));
-                            }
-                          );
-                          setSrc2(url);
-                          setUploadStatus((prev) => ({ ...prev, half2: "success" }));
-                        } catch (error) {
-                          console.error("Upload mislukt:", error);
-                          setUploadError((prev) => ({
-                            ...prev,
-                            half2: error.message || "Er is een fout opgetreden bij het uploaden",
-                          }));
-                          setUploadStatus((prev) => ({ ...prev, half2: "error" }));
+                          const url = await startMatchVideoUpload(match.id, "half2", file);
+                          if (url) setSrc2(url);
                         } finally {
                           e.target.value = "";
                         }
@@ -1191,6 +1255,7 @@ export default function MatchDetail() {
                           playsInline
                           className="max-h-full max-w-full w-auto h-auto object-contain mx-auto block shadow-2xl rounded-xl"
                           src={currentSrc || null}
+                          onLoadedMetadata={(e) => applyResumeTo(e.currentTarget)}
                           onPlay={() => setPlaying(true)}
                           onPause={() => setPlaying(false)}
                           onEnded={() => setPlaying(false)}
@@ -1284,33 +1349,65 @@ export default function MatchDetail() {
                       )}
                     </div>
 
-                    {/* Veldspelers blokjes naast elkaar */}
-                    <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-8 gap-2">
-                      {activeFieldPlayers.map((p) => {
-                        const isSelected = playerId === p.id;
-                        return (
-                          <button
-                            key={p.id}
-                            type="button"
-                            onClick={() => setPlayerId(isSelected ? "" : p.id)}
-                            className={`px-3 py-2.5 rounded-xl border text-xs sm:text-sm font-semibold transition-all text-center truncate ${
-                              isSelected
-                                ? "bg-[#FF6124] border-[#FF6124] text-white shadow-lg ring-2 ring-[#FF6124]/50 scale-[1.02]"
-                                : "bg-neutral-900 border-neutral-700 text-neutral-200 hover:border-[#FF6124]/60 hover:bg-neutral-800"
-                            }`}
-                            title={p.name}
-                          >
-                            {p.number ? <span className="opacity-75 mr-1 text-xs">#{p.number}</span> : null}
-                            {p.name}
-                          </button>
-                        );
-                      })}
-                      {activeFieldPlayers.length === 0 && (
-                        <div className="col-span-full text-xs text-neutral-500 py-2">
-                          Geen veldspelers gevonden. Voeg spelers toe aan de opstelling.
+                    {/* Veldspelers verdeeld over twee vakken */}
+                    {(() => {
+                      const vakken =
+                        lineup.vak1.length || lineup.vak2.length
+                          ? [
+                              { label: "Vak 1", players: lineup.vak1 },
+                              { label: "Vak 2", players: lineup.vak2 },
+                            ]
+                          : [
+                              {
+                                label: "Vak 1",
+                                players: activeFieldPlayers.slice(0, Math.ceil(activeFieldPlayers.length / 2)),
+                              },
+                              {
+                                label: "Vak 2",
+                                players: activeFieldPlayers.slice(Math.ceil(activeFieldPlayers.length / 2)),
+                              },
+                            ];
+                      return (
+                        <div className="flex flex-col gap-1.5">
+                          {vakken.map((vak) => (
+                            <div
+                              key={vak.label}
+                              className="flex items-center gap-2"
+                            >
+                              <div className="w-12 shrink-0 text-[11px] font-semibold uppercase tracking-wider text-neutral-400">
+                                {vak.label}
+                              </div>
+                              <div className="flex-1 grid grid-cols-4 gap-1.5">
+                                {vak.players.map((p) => {
+                                  const isSelected = playerId === p.id;
+                                  return (
+                                    <button
+                                      key={p.id}
+                                      type="button"
+                                      onClick={() => setPlayerId(isSelected ? "" : p.id)}
+                                      className={`px-2 py-1 rounded-lg border text-xs font-semibold transition-all text-center truncate ${
+                                        isSelected
+                                          ? "bg-[#FF6124] border-[#FF6124] text-white shadow-lg ring-2 ring-[#FF6124]/50 scale-[1.02]"
+                                          : "bg-neutral-900 border-neutral-700 text-neutral-200 hover:border-[#FF6124]/60 hover:bg-neutral-800"
+                                      }`}
+                                      title={p.name}
+                                    >
+                                      {p.number ? <span className="opacity-75 mr-1 text-xs">#{p.number}</span> : null}
+                                      {p.name}
+                                    </button>
+                                  );
+                                })}
+                              </div>
+                            </div>
+                          ))}
+                          {activeFieldPlayers.length === 0 && (
+                            <div className="col-span-full text-xs text-neutral-500 py-2">
+                              Geen veldspelers gevonden. Voeg spelers toe aan de opstelling.
+                            </div>
+                          )}
                         </div>
-                      )}
-                    </div>
+                      );
+                    })()}
 
                     {/* Bankspelers optioneel tonen */}
                     {showBenchInFullscreen && benchPlayers.length > 0 && (
@@ -1416,6 +1513,7 @@ export default function MatchDetail() {
                       className="w-full aspect-video select-none"
                       style={{ objectFit: "contain", display: "block", background: "black" }}
                       src={currentSrc || null}
+                      onLoadedMetadata={(e) => applyResumeTo(e.currentTarget)}
                       onPlay={() => setPlaying(true)}
                       onPause={() => setPlaying(false)}
                       onEnded={() => setPlaying(false)}
@@ -1473,7 +1571,7 @@ export default function MatchDetail() {
               {/* Pre/Post (seconden) tussen scrub en helft-knoppen */}
               <div className="flex items-end gap-3 ml-4">
                 <div className="flex items-center gap-2">
-                  <label className="text-xs text-neutral-400">Pre (s)</label>
+                  <label className="text-xs text-neutral-400">Pre nieuwe tag (s)</label>
                   <input
                     type="number"
                     min={0}
@@ -1485,7 +1583,7 @@ export default function MatchDetail() {
                   />
                 </div>
                 <div className="flex items-center gap-2">
-                  <label className="text-xs text-neutral-400">Post (s)</label>
+                  <label className="text-xs text-neutral-400">Post nieuwe tag (s)</label>
                   <input
                     type="number"
                     min={0}
@@ -1644,6 +1742,8 @@ export default function MatchDetail() {
                     <th className="px-4 py-2 text-left">Zone</th>
                     <th className="px-4 py-2 text-left">Actie</th>
                     <th className="px-4 py-2 text-left">Resultaat</th>
+                    <th className="px-4 py-2 text-left">Pre</th>
+                    <th className="px-4 py-2 text-left">Post</th>
                     <th className="px-4 py-2 text-left">Fav</th>
                     <th className="px-4 py-2 text-right"></th>
                   </tr>
@@ -1717,6 +1817,44 @@ export default function MatchDetail() {
                             {!c.result && !isOpp && "—"}
                           </td>
                           <td className="px-4 py-2">
+                            <input
+                              key={`pre-${c.id}-${clipPre(c)}`}
+                              type="number"
+                              min={0}
+                              defaultValue={clipPre(c)}
+                              onClick={(e) => e.stopPropagation()}
+                              onBlur={(e) => {
+                                const v = Number(e.target.value);
+                                if (Number.isFinite(v) && v >= 0 && v !== clipPre(c) && updateClip) {
+                                  updateClip(c.id, { pre: v });
+                                }
+                              }}
+                              onKeyDown={(e) => {
+                                if (e.key === "Enter") e.currentTarget.blur();
+                              }}
+                              className="w-14 bg-neutral-900 border border-neutral-700 rounded-lg px-2 py-1 text-xs text-neutral-100"
+                            />
+                          </td>
+                          <td className="px-4 py-2">
+                            <input
+                              key={`post-${c.id}-${clipPost(c)}`}
+                              type="number"
+                              min={0}
+                              defaultValue={clipPost(c)}
+                              onClick={(e) => e.stopPropagation()}
+                              onBlur={(e) => {
+                                const v = Number(e.target.value);
+                                if (Number.isFinite(v) && v >= 0 && v !== clipPost(c) && updateClip) {
+                                  updateClip(c.id, { post: v });
+                                }
+                              }}
+                              onKeyDown={(e) => {
+                                if (e.key === "Enter") e.currentTarget.blur();
+                              }}
+                              className="w-14 bg-neutral-900 border border-neutral-700 rounded-lg px-2 py-1 text-xs text-neutral-100"
+                            />
+                          </td>
+                          <td className="px-4 py-2">
                             <button
                               onClick={(e) => {
                                 e.stopPropagation();
@@ -1747,7 +1885,7 @@ export default function MatchDetail() {
                     })
                   ) : (
                     <tr>
-                      <td colSpan={8} className="px-4 py-4 text-center text-neutral-500">
+                      <td colSpan={10} className="px-4 py-4 text-center text-neutral-500">
                         Nog geen clips.
                       </td>
                     </tr>

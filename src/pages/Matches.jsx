@@ -66,6 +66,11 @@ export function formatActionLabel(actionId) {
   return map[actionId] || actionId.replaceAll("_", " ");
 }
 
+const DEFAULT_PRE = 4;
+const DEFAULT_POST = 6;
+const clipPre = (c) => (typeof c.pre === "number" ? c.pre : DEFAULT_PRE);
+const clipPost = (c) => (typeof c.post === "number" ? c.post : DEFAULT_POST);
+
 function fmt(t) {
   const m = Math.floor(t / 60);
   const s = Math.floor(t % 60).toString().padStart(2, "0");
@@ -114,6 +119,7 @@ export default function Matches() {
     awayScore: "",
     seasonId: "",
     players: [], // basis 8; bank wordt automatisch bepaald uit teamspelers - basis 8
+    vakken: { vak1: [], vak2: [] },
     videoUrls: { half1: "", half2: "" },
   });
 
@@ -143,15 +149,23 @@ export default function Matches() {
     awayTeamId: "",
   });
 
-  // Bewerkbare spelers voor geselecteerde wedstrijd
-  const [editPlayers, setEditPlayers] = useState([]);
+  // Bewerkbare vakken voor geselecteerde wedstrijd
+  const [editVakken, setEditVakken] = useState({ vak1: [], vak2: [] });
 
   useEffect(() => {
     if (!selectedMatch) {
-      setEditPlayers([]);
+      setEditVakken({ vak1: [], vak2: [] });
       return;
     }
-    setEditPlayers(selectedMatch.players || []);
+    if (selectedMatch.vakken && Array.isArray(selectedMatch.vakken.vak1) && Array.isArray(selectedMatch.vakken.vak2)) {
+      setEditVakken({
+        vak1: [...selectedMatch.vakken.vak1],
+        vak2: [...selectedMatch.vakken.vak2],
+      });
+      return;
+    }
+    const ids = selectedMatch.players || [];
+    setEditVakken({ vak1: ids.slice(0, 4), vak2: ids.slice(4) });
   }, [selectedMatch]);
 
   useEffect(() => {
@@ -448,8 +462,8 @@ export default function Matches() {
     return;
   }
 
-  if (!Array.isArray(newMatch.players) || newMatch.players.length !== 8) {
-    alert("Selecteer precies 8 basisspelers voor deze wedstrijd.");
+  if (!newMatch.vakken || newMatch.vakken.vak1.length !== 4 || newMatch.vakken.vak2.length !== 4) {
+    alert("Selecteer 4 spelers per vak (Vak 1 en Vak 2).");
     return;
   }
 
@@ -460,6 +474,7 @@ export default function Matches() {
 
     const id = await addMatch({
       ...newMatch,
+      players: [...newMatch.vakken.vak1, ...newMatch.vakken.vak2],
       homeScore: Number(newMatch.homeScore || 0),
       awayScore: Number(newMatch.awayScore || 0),
       seasonName: seasonLabel,
@@ -480,6 +495,7 @@ export default function Matches() {
       awayScore: "",
       seasonId: "",
       players: [],
+      vakken: { vak1: [], vak2: [] },
       videoUrls: { half1: "", half2: "" },
     });
 
@@ -507,6 +523,8 @@ export default function Matches() {
       result: opponent ? "opp_goal" : null,
       opponentGoal: opponent,
       clubId: userClubId || null,
+      pre: prePost.pre,
+      post: prePost.post,
     };
 
     if (action.isChance && !opponent) {
@@ -523,7 +541,7 @@ export default function Matches() {
 
   function playClip(c) {
     if (!videoRef.current) return;
-    const start = Math.max(0, c.time - prePost.pre);
+    const start = Math.max(0, c.time - clipPre(c));
     if (c.half !== currentHalf) setCurrentHalf(c.half);
     setTimeout(() => {
       videoRef.current.currentTime = start;
@@ -677,18 +695,43 @@ export default function Matches() {
             </div>
           </div>
 
-          {/* PLAYERS: kies precies 8 basisspelers; rest wordt bank */}
+          {/* PLAYERS: kies 2 vakken van 4 basisspelers; rest wordt bank */}
           <div className="md:col-span-3">
-            <label className="text-xs text-neutral-400 mb-1">Basisspelers (selecteer 8)</label>
-            <PlayersPicker
-              teams={teams}
-              homeTeamId={newMatch.homeTeamId}
-              awayTeamId={newMatch.awayTeamId}
-              seasonTeamId={selectedSeasonTeam?.id}
-              selected={newMatch.players}
-              onChange={ids => setNewMatch(m => ({ ...m, players: ids }))}
-              type="all"
-            />
+            <label className="text-xs text-neutral-400 mb-1">Basisspelers (4 per vak)</label>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              <div className="rounded-xl border border-neutral-800 bg-neutral-950/40 p-2">
+                <div className="text-xs font-semibold text-neutral-300 mb-1">
+                  Vak 1 ({newMatch.vakken.vak1.length}/4)
+                </div>
+                <PlayersPicker
+                  teams={teams}
+                  homeTeamId={newMatch.homeTeamId}
+                  awayTeamId={newMatch.awayTeamId}
+                  seasonTeamId={selectedSeasonTeam?.id}
+                  selected={newMatch.vakken.vak1}
+                  onChange={ids => setNewMatch(m => ({ ...m, vakken: { ...m.vakken, vak1: ids } }))}
+                  type="all"
+                  max={4}
+                  exclude={newMatch.vakken.vak2}
+                />
+              </div>
+              <div className="rounded-xl border border-neutral-800 bg-neutral-950/40 p-2">
+                <div className="text-xs font-semibold text-neutral-300 mb-1">
+                  Vak 2 ({newMatch.vakken.vak2.length}/4)
+                </div>
+                <PlayersPicker
+                  teams={teams}
+                  homeTeamId={newMatch.homeTeamId}
+                  awayTeamId={newMatch.awayTeamId}
+                  seasonTeamId={selectedSeasonTeam?.id}
+                  selected={newMatch.vakken.vak2}
+                  onChange={ids => setNewMatch(m => ({ ...m, vakken: { ...m.vakken, vak2: ids } }))}
+                  type="all"
+                  max={4}
+                  exclude={newMatch.vakken.vak1}
+                />
+              </div>
+            </div>
           </div>
         </div>
 
@@ -863,19 +906,38 @@ export default function Matches() {
         {selectedMatch && (
           <div className="mt-4 border-t border-neutral-800 pt-4 space-y-3">
             <h4 className="text-sm font-semibold text-neutral-100">
-              Opstelling voor geselecteerde wedstrijd (basis 8)
+              Opstelling voor geselecteerde wedstrijd (2 vakken van 4)
             </h4>
 
-            <div className="grid grid-cols-1 gap-3">
-              <div>
-                <label className="text-xs text-neutral-400 mb-1 block">Basisspelers (selecteer 8)</label>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              <div className="rounded-xl border border-neutral-800 bg-neutral-950/40 p-2">
+                <div className="text-xs font-semibold text-neutral-300 mb-1">
+                  Vak 1 ({editVakken.vak1.length}/4)
+                </div>
                 <PlayersPicker
                   teams={teams}
                   homeTeamId={selectedMatch.homeTeamId}
                   awayTeamId={selectedMatch.awayTeamId}
-                  selected={editPlayers}
-                  onChange={setEditPlayers}
+                  selected={editVakken.vak1}
+                  onChange={ids => setEditVakken(v => ({ ...v, vak1: ids }))}
                   type="all"
+                  max={4}
+                  exclude={editVakken.vak2}
+                />
+              </div>
+              <div className="rounded-xl border border-neutral-800 bg-neutral-950/40 p-2">
+                <div className="text-xs font-semibold text-neutral-300 mb-1">
+                  Vak 2 ({editVakken.vak2.length}/4)
+                </div>
+                <PlayersPicker
+                  teams={teams}
+                  homeTeamId={selectedMatch.homeTeamId}
+                  awayTeamId={selectedMatch.awayTeamId}
+                  selected={editVakken.vak2}
+                  onChange={ids => setEditVakken(v => ({ ...v, vak2: ids }))}
+                  type="all"
+                  max={4}
+                  exclude={editVakken.vak1}
                 />
               </div>
             </div>
@@ -884,12 +946,13 @@ export default function Matches() {
               <button
                 onClick={async () => {
                   try {
-                    if (!Array.isArray(editPlayers) || editPlayers.length !== 8) {
-                      alert("Selecteer precies 8 basisspelers voor deze wedstrijd.");
+                    if (editVakken.vak1.length !== 4 || editVakken.vak2.length !== 4) {
+                      alert("Selecteer 4 spelers per vak (Vak 1 en Vak 2).");
                       return;
                     }
                     await updateMatch(selectedMatch.id, {
-                      players: editPlayers,
+                      players: [...editVakken.vak1, ...editVakken.vak2],
+                      vakken: { vak1: editVakken.vak1, vak2: editVakken.vak2 },
                     });
                     alert("Basisspelers opgeslagen voor deze wedstrijd. Bankspelers worden automatisch bepaald uit de overige teamleden.");
                   } catch (e) {
@@ -1477,7 +1540,7 @@ export default function Matches() {
   );
 }
 
-export function PlayersPicker({ teams, homeTeamId, awayTeamId, seasonTeamId, selected, onChange, type }) {
+export function PlayersPicker({ teams, homeTeamId, awayTeamId, seasonTeamId, selected, onChange, type, exclude = [], max }) {
   const homeTeam = teams.find(t => t.id === homeTeamId);
   const awayTeam = teams.find(t => t.id === awayTeamId);
 
@@ -1520,10 +1583,14 @@ export function PlayersPicker({ teams, homeTeamId, awayTeamId, seasonTeamId, sel
     }
   }
 
+  const excluded = new Set(exclude);
+
   function toggle(id) {
+    if (excluded.has(id)) return;
     if (selected.includes(id)) {
       onChange(selected.filter(x => x !== id));
     } else {
+      if (typeof max === "number" && selected.length >= max) return;
       onChange([...selected, id]);
     }
   }
@@ -1542,8 +1609,11 @@ export function PlayersPicker({ teams, homeTeamId, awayTeamId, seasonTeamId, sel
                 <button
                   key={p.id}
                   onClick={() => toggle(p.id)}
+                  disabled={excluded.has(p.id)}
                   className={`px-3 py-2 rounded-xl border text-sm ${
-                    selected.includes(p.id)
+                    excluded.has(p.id)
+                      ? "border-neutral-800 bg-neutral-900 opacity-40 cursor-not-allowed"
+                      : selected.includes(p.id)
                       ? "border-[#FF6124] bg-[#FF6124]/15"
                       : "border-neutral-800 bg-neutral-900 hover:border-[#FF6124]/50"
                   }`}
@@ -1560,8 +1630,11 @@ export function PlayersPicker({ teams, homeTeamId, awayTeamId, seasonTeamId, sel
                 <button
                   key={p.id}
                   onClick={() => toggle(p.id)}
+                  disabled={excluded.has(p.id)}
                   className={`px-3 py-2 rounded-xl border text-sm ${
-                    selected.includes(p.id)
+                    excluded.has(p.id)
+                      ? "border-neutral-800 bg-neutral-900 opacity-40 cursor-not-allowed"
+                      : selected.includes(p.id)
                       ? "border-[#FF6124] bg-[#FF6124]/15"
                       : "border-neutral-800 bg-neutral-900 hover:border-[#FF6124]/50"
                   }`}

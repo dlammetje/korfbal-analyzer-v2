@@ -4,7 +4,7 @@ import React from "react";
 // onSelect?: ({ x, y }) => void
 // selectedPosition?: { x, y } – tijdelijke marker (bijv. bij klikken voor nieuwe actie)
 // maxWidth: Tailwind max-w-* class, bijv. "max-w-xl" (default)
-export default function FieldHeatmap({ points = [], onSelect, selectedPosition, maxWidth = "max-w-xl", hideHint = false }) {
+export default function FieldHeatmap({ points = [], onSelect, selectedPosition, maxWidth = "max-w-xl", hideHint = false, zoneOverlay = null }) {
   function handleClick(e) {
     if (!onSelect) return;
     const rect = e.currentTarget.getBoundingClientRect();
@@ -15,8 +15,8 @@ export default function FieldHeatmap({ points = [], onSelect, selectedPosition, 
   }
 
   const getColor = (p) => {
-    if (p.result === "goal") return "bg-green-500";
-    if (p.result === "miss") return "bg-red-500";
+    if (p.result === "goal" || p.result === "opp_goal") return "bg-green-500";
+    if (p.result === "miss" || p.result === "opp_miss") return "bg-red-500";
     if (p.actionType && p.actionType.includes("rebound")) return "bg-amber-400";
     if (p.actionType === "overtreding") return "bg-yellow-400";
     return "bg-[#FF6124]";
@@ -58,6 +58,29 @@ export default function FieldHeatmap({ points = [], onSelect, selectedPosition, 
             transform: "translate(-50%, -50%)",
           }}
         />
+
+        {/* Zone-overlay met afrondingspercentages per zone */}
+        {Array.isArray(zoneOverlay) && zoneOverlay.length > 0 && (
+          <div className="absolute inset-0 grid grid-cols-3 grid-rows-3 pointer-events-none">
+            {zoneOverlay.map((z, i) => (
+              <div
+                key={z.zone || i}
+                className="relative border border-white/5"
+                style={
+                  (z.attempts || 0) > 0
+                    ? { backgroundColor: `hsla(${Math.round((z.fg || 0) * 1.2)}, 70%, 45%, 0.18)` }
+                    : undefined
+                }
+              >
+                {(z.attempts || 0) > 0 && (
+                  <span className="absolute top-1 left-1 rounded-md bg-black/60 px-1.5 py-0.5 text-[10px] text-white">
+                    {z.fg || 0}% · {z.goals || 0}/{z.attempts}
+                  </span>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
 
         {/* Punten */}
         {points

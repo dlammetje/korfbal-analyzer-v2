@@ -13,9 +13,9 @@ function fmt(t) {
 
 // Simpele set aanvalsacties voor live taggen (allemaal met Raak/Mis-popup)
 const OFFENSE_ACTIONS = [
-  { id: "schot_3m", label: "Schot >3m", isChance: true },
-  { id: "schot_6m", label: "Schot >6m", isChance: true },
-  { id: "schot_9m", label: "Schot >9m", isChance: true },
+  { id: "schot_3m", label: "Schot <3m", isChance: true },
+  { id: "schot_6m", label: "Schot <6m", isChance: true },
+  { id: "schot_9m", label: "Schot <9m", isChance: true },
   { id: "rebound_win", label: "Rebound (win)", isChance: false },
   { id: "rebound_lose", label: "Rebound (Verlies)", isChance: false },
   { id: "balverlies", label: "Balverlies", isChance: false },
@@ -23,9 +23,9 @@ const OFFENSE_ACTIONS = [
 
 // Verdedigingsacties voor live taggen: tegenstander-kansen en verdediging
 const DEFENSE_ACTIONS = [
-  { id: "tegen_schot_3m", label: "Tegenstander Schot >3m", isChance: true, opponentGoal: true },
-  { id: "tegen_schot_6m", label: "Tegenstander Schot >6m", isChance: true, opponentGoal: true },
-  { id: "tegen_schot_9m", label: "Tegenstander Schot >9m", isChance: true, opponentGoal: true },
+  { id: "tegen_schot_3m", label: "Tegenstander Schot <3m", isChance: true, opponentGoal: true },
+  { id: "tegen_schot_6m", label: "Tegenstander Schot <6m", isChance: true, opponentGoal: true },
+  { id: "tegen_schot_9m", label: "Tegenstander Schot <9m", isChance: true, opponentGoal: true },
   { id: "rebound_def_win", label: "Rebound verd. (win)", isChance: false },
   { id: "rebound_def_lose", label: "Rebound verd. (Verlies)", isChance: false },
   { id: "balverlies", label: "Balverlies", isChance: false },

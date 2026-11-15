@@ -14,9 +14,9 @@ const ZONES = [
 ];
 
 const ATTACK_ACTIONS = [
-  { id: "schot_3m", label: "Schot >3m", isChance: true },
-  { id: "schot_6m", label: "Schot >6m", isChance: true },
-  { id: "schot_9m", label: "Schot >9m", isChance: true },
+  { id: "schot_3m", label: "Schot <3m", isChance: true },
+  { id: "schot_6m", label: "Schot <6m", isChance: true },
+  { id: "schot_9m", label: "Schot <9m", isChance: true },
   { id: "rebound_win", label: "Rebound (win)", isChance: false },
   { id: "rebound_lose", label: "Rebound (Verlies)", isChance: false },
   { id: "balverlies", label: "Balverlies", isChance: false },
@@ -32,24 +32,24 @@ const DEFENSE_ACTIONS = [
 ];
 
 const OPPONENT_GOALS = [
-  { id: "tegen_schot_3m", label: "Tegenstander Schot >3m" },
-  { id: "tegen_schot_6m", label: "Tegenstander Schot >6m" },
-  { id: "tegen_schot_9m", label: "Tegenstander Schot >9m" },
+  { id: "tegen_schot_3m", label: "Tegenstander Schot <3m" },
+  { id: "tegen_schot_6m", label: "Tegenstander Schot <6m" },
+  { id: "tegen_schot_9m", label: "Tegenstander Schot <9m" },
 ];
 
 export function formatActionLabel(actionId) {
   if (!actionId) return "—";
   const map = {
-    schot_3m: "Schot >3m",
-    schot_6m: "Schot >6m",
-    schot_9m: "Schot >9m",
+    schot_3m: "Schot <3m",
+    schot_6m: "Schot <6m",
+    schot_9m: "Schot <9m",
     schot: "Schot",
     rebound_win: "Rebound (win)",
     rebound_lose: "Rebound (Verlies)",
     balverlies: "Balverlies",
-    tegen_schot_3m: "Tegenstander Schot >3m",
-    tegen_schot_6m: "Tegenstander Schot >6m",
-    tegen_schot_9m: "Tegenstander Schot >9m",
+    tegen_schot_3m: "Tegenstander Schot <3m",
+    tegen_schot_6m: "Tegenstander Schot <6m",
+    tegen_schot_9m: "Tegenstander Schot <9m",
     tegen_schot: "Tegenstander Schot",
     rebound_def_win: "Rebound verd. (win)",
     rebound_def_lose: "Rebound verd. (Verlies)",

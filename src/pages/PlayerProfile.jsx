@@ -18,16 +18,16 @@ function StatCard({ title, value, color }) {
 function formatActionLabel(actionId) {
   if (!actionId) return "—";
   const map = {
-    schot_3m: "Schot >3m",
-    schot_6m: "Schot >6m",
-    schot_9m: "Schot >9m",
+    schot_3m: "Schot <3m",
+    schot_6m: "Schot <6m",
+    schot_9m: "Schot <9m",
     schot: "Schot",
     rebound_win: "Rebound (win)",
     rebound_lose: "Rebound (Verlies)",
     balverlies: "Balverlies",
-    tegen_schot_3m: "Tegenstander Schot >3m",
-    tegen_schot_6m: "Tegenstander Schot >6m",
-    tegen_schot_9m: "Tegenstander Schot >9m",
+    tegen_schot_3m: "Tegenstander Schot <3m",
+    tegen_schot_6m: "Tegenstander Schot <6m",
+    tegen_schot_9m: "Tegenstander Schot <9m",
     tegen_schot: "Tegenstander Schot",
     rebound_def_win: "Rebound verd. (win)",
     rebound_def_lose: "Rebound verd. (Verlies)",

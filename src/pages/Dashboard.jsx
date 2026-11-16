@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAppData } from "../context/AppDataContext";
 import { useAuth } from "../context/AuthContext";
@@ -6,12 +6,8 @@ import { db } from "../lib/firebaseClient";
 import { doc, getDoc } from "firebase/firestore";
 import { Trophy, Target, TrendingUp, Calendar, ChevronRight, Flame, Play, Star } from "lucide-react";
 import FieldHeatmap from "../components/FieldHeatmap";
+import ClipPlayerModal from "../components/ClipPlayerModal";
 import { formatActionLabel } from "./MatchDetail";
-
-const DEFAULT_PRE = 4;
-const DEFAULT_POST = 6;
-const clipPre = (c) => (typeof c.pre === "number" ? c.pre : DEFAULT_PRE);
-const clipPost = (c) => (typeof c.post === "number" ? c.post : DEFAULT_POST);
 
 function fmt(t) {
   const m = Math.floor(t / 60);
@@ -490,16 +486,6 @@ export default function Dashboard() {
     ? teams.find((t) => t.id === preferredTeamId) || null
     : null;
 
-  // Sluit de favoriete-clip modal met Escape
-  useEffect(() => {
-    if (!activeFavorite) return;
-    function onKey(e) {
-      if (e.key === "Escape") setActiveFavorite(null);
-    }
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [activeFavorite]);
-
   return (
     <div className="space-y-6">
 
@@ -851,126 +837,18 @@ export default function Dashboard() {
 
       {/* Favoriete clip modal */}
       {activeFavorite && (
-        <FavoriteClipModal
+        <ClipPlayerModal
           clip={activeFavorite}
           match={matches.find((x) => x.id === activeFavorite.matchId)}
-          player={allPlayers.find((p) => p.id === activeFavorite.playerId)}
+          playerLabel={(() => {
+            const p = allPlayers.find((pl) => pl.id === activeFavorite.playerId);
+            return p ? `${p.number ? `#${p.number} ` : ""}${p.name}` : "";
+          })()}
           teams={teams}
           onClose={() => setActiveFavorite(null)}
           onOpenMatch={(matchId) => navigate(`/matches/${matchId}`)}
         />
       )}
-    </div>
-  );
-}
-
-function FavoriteClipModal({ clip, match, player, teams, onClose, onOpenMatch }) {
-  const half = clip.half || 1;
-  const videoUrl = match?.videoUrls?.[`half${half}`] || "";
-  const start = Math.max(0, (clip.time || 0) - clipPre(clip));
-  const end = (clip.time || 0) + clipPost(clip);
-  const videoRef = useRef(null);
-  const endPausedRef = useRef(false);
-
-  useEffect(() => {
-    const v = videoRef.current;
-    if (!v) return;
-
-    function onLoadedMetadata() {
-      v.currentTime = Math.min(Math.max(0, start), Math.max(0, v.duration || 0));
-      v.play().catch(() => {});
-    }
-    function onTimeUpdate() {
-      if (endPausedRef.current) return;
-      if (v.currentTime >= end) {
-        endPausedRef.current = true;
-        v.pause();
-      }
-    }
-
-    v.addEventListener("loadedmetadata", onLoadedMetadata);
-    v.addEventListener("timeupdate", onTimeUpdate);
-    if (v.readyState >= 1) onLoadedMetadata();
-    return () => {
-      v.removeEventListener("loadedmetadata", onLoadedMetadata);
-      v.removeEventListener("timeupdate", onTimeUpdate);
-    };
-  }, [start, end, videoUrl]);
-
-  const playerLabel = player
-    ? `${player.number ? `#${player.number} ` : ""}${player.name}`
-    : "";
-
-  return (
-    <div
-      className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-4"
-      onClick={onClose}
-    >
-      <div
-        className="w-full max-w-3xl bg-neutral-900 border border-neutral-700 rounded-2xl p-4 space-y-3"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="flex items-start justify-between gap-3">
-          <div className="min-w-0">
-            <div className="text-base font-semibold text-white truncate">
-              {formatActionLabel(clip.actionType)}
-              {playerLabel && <span className="text-neutral-400 font-normal"> · {playerLabel}</span>}
-            </div>
-            <div className="text-xs text-neutral-500">
-              {match
-                ? `${formatMatchDate(match.date)} ${formatTeamName(match.homeTeamId, teams)} vs ${formatTeamName(match.awayTeamId, teams)} · ${clip.half || 1}e helft`
-                : ""}
-            </div>
-          </div>
-          <button
-            onClick={onClose}
-            className="text-neutral-400 hover:text-white text-xl leading-none px-1"
-            aria-label="Sluiten"
-          >
-            ✕
-          </button>
-        </div>
-
-        {videoUrl ? (
-          <video
-            ref={videoRef}
-            src={videoUrl}
-            controls
-            autoPlay
-            playsInline
-            className="w-full rounded-xl bg-black"
-          />
-        ) : (
-          <div className="w-full aspect-video rounded-xl bg-neutral-950 flex items-center justify-center text-sm text-neutral-500 text-center px-6">
-            Beeld van deze helft is nog niet geüpload.
-          </div>
-        )}
-
-        <div className="flex items-center gap-2">
-          {videoUrl && (
-            <button
-              onClick={() => {
-                const v = videoRef.current;
-                if (!v) return;
-                endPausedRef.current = false;
-                v.currentTime = start;
-                v.play().catch(() => {});
-              }}
-              className="px-3 py-1.5 rounded-lg bg-[#FF6124] text-white text-sm hover:opacity-90"
-            >
-              Opnieuw afspelen
-            </button>
-          )}
-          {match && (
-            <button
-              onClick={() => onOpenMatch(match.id)}
-              className="px-3 py-1.5 rounded-lg bg-neutral-800 border border-neutral-700 text-sm text-neutral-200 hover:border-[#FF6124]/60"
-            >
-              Open wedstrijd
-            </button>
-          )}
-        </div>
-      </div>
     </div>
   );
 }

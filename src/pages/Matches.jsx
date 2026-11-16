@@ -1,6 +1,6 @@
 // src/pages/Matches.jsx
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { Play, Pause, Upload, ChevronLeft, ChevronRight, Plus, Trash2, FileText, Wrench, ArrowLeftRight } from "lucide-react";
+import { Play, Pause, Upload, ChevronLeft, ChevronRight, Plus, Trash2, FileText, Wrench, ArrowLeftRight, RotateCcw } from "lucide-react";
 import { useAppData } from "../context/AppDataContext";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
@@ -75,6 +75,14 @@ function fmt(t) {
   const m = Math.floor(t / 60);
   const s = Math.floor(t % 60).toString().padStart(2, "0");
   return `${m}:${s}`;
+}
+
+// "YYYY-MM-DD" → "DD-MM-YYYY" voor weergave
+function formatMatchDate(date) {
+  if (!date || typeof date !== "string") return "Onbekende datum";
+  const parts = date.split("-");
+  if (parts.length !== 3) return date;
+  return `${parts[2]}-${parts[1]}-${parts[0]}`;
 }
 
 function formatTeamName(teamId, teams) {
@@ -287,6 +295,11 @@ export default function Matches() {
   const [sequenceModalMatchId, setSequenceModalMatchId] = useState("");
   const [sequenceSelectedId, setSequenceSelectedId] = useState("");
   const [sequencePlaylistIndex, setSequencePlaylistIndex] = useState(0);
+  const [seqAutoAdvance, setSeqAutoAdvance] = useState(true);
+  const pendingSeekRef = useRef(null);
+  const stopAtRef = useRef(null);
+  const internalSeekRef = useRef(false);
+  const seqModalRef = useRef(null);
 
   const allowedManageEmails = [
     "dlammetje@gmail.com",
@@ -431,21 +444,119 @@ export default function Matches() {
     return matches.find((m) => m.id === sequenceModalMatchId) || null;
   }, [sequenceModalMatchId, matches]);
 
-  function playCurrentSeqClipModal() {
-    if (!sequenceVideoRef.current || !currentSeqClip) return;
-    const start = Math.max(0, (currentSeqClip.time || 0) - 4);
-    sequenceVideoRef.current.currentTime = start;
-    sequenceVideoRef.current.play();
+  // Video-URL voor de huidige sequentie-clip (alleen de juiste helft, geen cross-half fallback)
+  const seqVideoSrc = useMemo(() => {
+    if (!currentSeqClip || !currentSequenceMatch) return null;
+    const h = currentSeqClip.half || 1;
+    const urls = currentSequenceMatch.videoUrls || {};
+    let url = urls[`half${h}`] || null;
+    if (!url) {
+      try {
+        const stored = JSON.parse(
+          localStorage.getItem(`ka2_videos_${currentSequenceMatch.id}`) || "{}"
+        );
+        url = stored[`half${h}`] || null;
+      } catch (e) {
+        // negeer parse fouten
+      }
+    }
+    return url;
+  }, [currentSeqClip, currentSequenceMatch]);
+
+  // Spelers van thuis- en uitteam van de wedstrijd in de sequentie-modal
+  const seqPlayers = useMemo(() => {
+    if (!currentSequenceMatch || !getTeamPlayers) return [];
+    return [
+      ...(getTeamPlayers(currentSequenceMatch.homeTeamId || "") || []),
+      ...(getTeamPlayers(currentSequenceMatch.awayTeamId || "") || []),
+    ];
+  }, [currentSequenceMatch, getTeamPlayers]);
+
+  function playSeqClip(idx, autoplay = true) {
+    if (!sequenceClipsForModal.length) return;
+    const clamped = Math.max(0, Math.min(sequenceClipsForModal.length - 1, idx));
+    pendingSeekRef.current = { idx: clamped, autoplay };
+    // Zelfde clip (bijv. "Opnieuw"): index verandert niet, dus het effect draait niet — direct toepassen
+    if (clamped === sequencePlaylistIndex) applyPendingSeek();
+    else setSequencePlaylistIndex(clamped);
   }
 
-  function goToNextSeqClipModal() {
-    if (!sequenceClipsForModal.length) return;
-    setSequencePlaylistIndex((idx) => Math.min(sequenceClipsForModal.length - 1, idx + 1));
+  function applyPendingSeek() {
+    const v = sequenceVideoRef.current;
+    const pending = pendingSeekRef.current;
+    if (!v || !pending) return;
+    const clip = sequenceClipsForModal[pending.idx];
+    if (!clip) {
+      pendingSeekRef.current = null;
+      return;
+    }
+    if (v.readyState < 1) return;
+    internalSeekRef.current = true;
+    v.currentTime = Math.max(0, (clip.time || 0) - clipPre(clip));
+    setTimeout(() => {
+      internalSeekRef.current = false;
+    }, 0);
+    if (pending.autoplay) v.play().catch(() => {});
+    pendingSeekRef.current = null;
+    stopAtRef.current = (clip.time || 0) + clipPost(clip);
   }
 
-  function goToPrevSeqClipModal() {
-    if (!sequenceClipsForModal.length) return;
-    setSequencePlaylistIndex((idx) => Math.max(0, idx - 1));
+  useEffect(() => {
+    applyPendingSeek();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sequencePlaylistIndex, seqVideoSrc, sequenceSelectedId]);
+
+  // Selecteer automatisch de eerste sequentie als de modal opent
+  useEffect(() => {
+    if (!sequenceModalMatchId) return;
+    if (!sequenceSelectedId && sequenceOptionsForModal.length) {
+      setSequenceSelectedId(sequenceOptionsForModal[0].id);
+      setSequencePlaylistIndex(0);
+      pendingSeekRef.current = { idx: 0, autoplay: false };
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sequenceModalMatchId, sequenceOptionsForModal, sequenceSelectedId]);
+
+  // Scroll de actieve clip-kaart in beeld
+  useEffect(() => {
+    const el = seqModalRef.current?.querySelector(
+      `[data-seq-idx="${sequencePlaylistIndex}"]`
+    );
+    el?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+  }, [sequencePlaylistIndex, sequenceSelectedId]);
+
+  // Toetsenbord: Esc sluit, pijlen = vorige/volgende clip, spatie = play/pause
+  useEffect(() => {
+    if (!sequenceModalMatchId) return;
+    function onKey(e) {
+      const tag = e.target && e.target.tagName;
+      const inField = tag === "INPUT" || tag === "SELECT" || tag === "TEXTAREA";
+      if (e.key === "Escape") {
+        closeSeqModal();
+      } else if (inField) {
+        return;
+      } else if (e.key === "ArrowLeft") {
+        playSeqClip(sequencePlaylistIndex - 1);
+      } else if (e.key === "ArrowRight") {
+        playSeqClip(sequencePlaylistIndex + 1);
+      } else if (e.key === " ") {
+        e.preventDefault();
+        const v = sequenceVideoRef.current;
+        if (v) v.paused ? v.play().catch(() => {}) : v.pause();
+      }
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sequenceModalMatchId, sequencePlaylistIndex, sequenceClipsForModal]);
+
+  function closeSeqModal() {
+    setSequenceModalMatchId("");
+    setSequenceSelectedId("");
+    setSequencePlaylistIndex(0);
+    pendingSeekRef.current = null;
+    stopAtRef.current = null;
+    internalSeekRef.current = false;
   }
 
   async function handleCreateMatch() {
@@ -970,35 +1081,51 @@ export default function Matches() {
 
       {/* Sequentie-playlist modal */}
       {sequenceModalMatchId && (
-        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 px-4">
-          <div className="bg-neutral-900 border border-neutral-800 rounded-2xl p-6 w-full max-w-5xl space-y-4 max-h-[90vh] overflow-y-auto">
-            <div className="flex justify-between items-center mb-2">
-              <h3 className="text-lg font-semibold text-neutral-100">Clipplaylist per sequentie</h3>
+        <div
+          className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4"
+          onClick={closeSeqModal}
+        >
+          <div
+            ref={seqModalRef}
+            className="bg-neutral-900 border border-neutral-700/60 rounded-2xl w-full max-w-6xl max-h-[92vh] overflow-hidden flex flex-col shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Header */}
+            <div className="flex items-start justify-between gap-3 px-4 pt-4 pb-3 border-b border-neutral-800">
+              <div className="min-w-0">
+                <h3 className="text-lg font-semibold text-neutral-100">Sequenties</h3>
+                <div className="text-xs text-neutral-500">
+                  {currentSequenceMatch
+                    ? `${formatMatchDate(currentSequenceMatch.date)} ${formatTeamName(currentSequenceMatch.homeTeamId, teams)} vs ${formatTeamName(currentSequenceMatch.awayTeamId, teams)}`
+                    : ""}
+                </div>
+              </div>
               <button
-                onClick={() => {
-                  setSequenceModalMatchId("");
-                  setSequenceSelectedId("");
-                  setSequencePlaylistIndex(0);
-                }}
-                className="text-neutral-400 hover:text-white text-sm"
+                onClick={closeSeqModal}
+                className="text-neutral-400 hover:text-white text-xl leading-none px-1"
+                aria-label="Sluiten"
               >
-                Sluiten
+                ✕
               </button>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 items-end">
-              <div>
-                <label className="text-xs text-neutral-400 block mb-1">Sequentie</label>
+            {/* Sequentie-keuze */}
+            {sequenceOptionsForModal.length === 0 ? (
+              <div className="p-6 text-sm text-neutral-500 text-center">
+                Nog geen sequenties voor deze wedstrijd.
+              </div>
+            ) : (
+              <div className="px-4 pt-3 flex items-center gap-3">
+                <label className="text-xs text-neutral-400">Sequentie</label>
                 <select
                   value={sequenceSelectedId}
                   onChange={(e) => {
-                    const val = e.target.value;
-                    setSequenceSelectedId(val);
+                    setSequenceSelectedId(e.target.value);
                     setSequencePlaylistIndex(0);
+                    pendingSeekRef.current = { idx: 0, autoplay: false };
                   }}
-                  className="bg-neutral-800 border border-neutral-700 px-3 py-2 rounded-xl text-sm w-full"
+                  className="bg-neutral-800 border border-neutral-700 px-3 py-2 rounded-xl text-sm min-w-[220px] focus:outline-none focus:border-[#FF6124]"
                 >
-                  <option value="">— kies sequentie —</option>
                   {sequenceOptionsForModal.map((s) => (
                     <option key={s.id} value={s.id}>
                       {s.name}
@@ -1006,117 +1133,163 @@ export default function Matches() {
                   ))}
                 </select>
               </div>
-            </div>
-
-            <div className="bg-black rounded-2xl overflow-hidden mt-2">
-              <video
-                ref={sequenceVideoRef}
-                className="w-full aspect-video"
-                src={(() => {
-                  if (!currentSeqClip || !currentSequenceMatch) return null;
-
-                  const h = currentSeqClip.half || 1;
-                  const urls = currentSequenceMatch.videoUrls || {};
-
-                  // 1) Probeer match.videoUrls voor de juiste helft
-                  let url = urls[`half${h}`] || null;
-
-                  // 2) Val terug op een andere helft indien nodig
-                  if (!url) {
-                    url = urls.half1 || urls.half2 || null;
-                  }
-
-                  // 3) Probeer localStorage fallback (zelfde key als in AppDataContext)
-                  if (!url) {
-                    try {
-                      const lsKey = `ka2_videos_${currentSequenceMatch.id}`;
-                      const stored = JSON.parse(localStorage.getItem(lsKey) || "{}");
-                      url = stored[`half${h}`] || stored.half1 || stored.half2 || null;
-                    } catch (e) {
-                      // negeer parse fouten
-                    }
-                  }
-
-                  return url;
-                })()}
-                controls
-              />
-            </div>
-
-            <div className="flex flex-wrap items-center gap-2 mt-3">
-              <button
-                onClick={goToPrevSeqClipModal}
-                className="px-3 py-2 rounded-xl bg-neutral-800 text-neutral-200 text-sm"
-                disabled={!sequenceClipsForModal.length || sequencePlaylistIndex === 0}
-              >
-                Vorige
-              </button>
-              <button
-                onClick={playCurrentSeqClipModal}
-                className="px-4 py-2 rounded-xl bg-[#FF6124] text-white text-sm disabled:opacity-50"
-                disabled={!sequenceClipsForModal.length || !currentSequenceMatch}
-              >
-                Speel huidige clip
-              </button>
-              <button
-                onClick={goToNextSeqClipModal}
-                className="px-3 py-2 rounded-xl bg-neutral-800 text-neutral-200 text-sm"
-                disabled={!sequenceClipsForModal.length || sequencePlaylistIndex >= sequenceClipsForModal.length - 1}
-              >
-                Volgende
-              </button>
-
-              <span className="text-xs text-neutral-400 ml-auto">
-                {sequenceClipsForModal.length
-                  ? `Clip ${sequencePlaylistIndex + 1} van ${sequenceClipsForModal.length}`
-                  : "Geen clips voor deze sequentie"}
-              </span>
-            </div>
-
-            {sequenceClipsForModal.length > 0 && (
-              <div className="max-h-64 overflow-y-auto mt-3 border-t border-neutral-800 pt-3 text-sm">
-                <table className="w-full">
-                  <thead className="text-neutral-400 text-xs">
-                    <tr>
-                      <th className="text-left py-1">#</th>
-                      <th className="text-left py-1">Tijd</th>
-                      <th className="text-left py-1">Helft</th>
-                      <th className="text-left py-1">Speler</th>
-                      <th className="text-left py-1">Actie</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {sequenceClipsForModal.map((c, idx) => (
-                      <tr
-                        key={c.id || idx}
-                        className={`border-t border-neutral-800 cursor-pointer hover:bg-neutral-900 ${
-                          idx === sequencePlaylistIndex ? "bg-[#FF6124]/20" : ""
-                        }`}
-                        onClick={() => {
-                          setSequencePlaylistIndex(idx);
-                          playCurrentSeqClipModal();
-                        }}
-                      >
-                        <td className="py-1 pr-2 text-neutral-400 text-xs">{idx + 1}</td>
-                        <td className="py-1 pr-2">{fmt(c.time || 0)}</td>
-                        <td className="py-1 pr-2">{c.half || 1}e</td>
-                        <td className="py-1 pr-2">{(() => {
-                          const teamPlayers = getTeamPlayers
-                            ? [
-                                ...(getTeamPlayers(currentSequenceMatch?.homeTeamId || "") || []),
-                                ...(getTeamPlayers(currentSequenceMatch?.awayTeamId || "") || []),
-                              ]
-                            : [];
-                          const p = teamPlayers.find((p) => p.id === c.playerId);
-                          return p?.name || "Onbekend";
-                        })()}</td>
-                        <td className="py-1 pr-2">{formatActionLabel(c.actionType)}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
             )}
+
+            {/* Body: video links, cliplijst rechts */}
+            <div className="grid lg:grid-cols-3 gap-4 p-4 overflow-y-auto">
+              <div className="lg:col-span-2 space-y-3">
+                {currentSeqClip && seqVideoSrc ? (
+                  <div className="relative rounded-xl overflow-hidden bg-black aspect-video">
+                    <video
+                      ref={sequenceVideoRef}
+                      className="w-full h-full"
+                      src={seqVideoSrc}
+                      controls
+                      playsInline
+                      onLoadedMetadata={applyPendingSeek}
+                      onTimeUpdate={() => {
+                        const v = sequenceVideoRef.current;
+                        if (!v || !stopAtRef.current) return;
+                        if (v.currentTime >= stopAtRef.current) {
+                          stopAtRef.current = null;
+                          if (
+                            seqAutoAdvance &&
+                            sequencePlaylistIndex < sequenceClipsForModal.length - 1
+                          ) {
+                            playSeqClip(sequencePlaylistIndex + 1);
+                          } else {
+                            v.pause();
+                          }
+                        }
+                      }}
+                      onSeeking={() => {
+                        if (!internalSeekRef.current) stopAtRef.current = null;
+                      }}
+                    />
+                    <span className="absolute top-2 left-2 rounded-md bg-black/70 px-1.5 py-0.5 text-[10px] text-white pointer-events-none">
+                      Clip {sequencePlaylistIndex + 1} / {sequenceClipsForModal.length} ·{" "}
+                      {currentSeqClip.half || 1}e helft · {fmt(currentSeqClip.time || 0)}
+                    </span>
+                  </div>
+                ) : currentSeqClip ? (
+                  <div className="rounded-xl bg-neutral-950 aspect-video flex items-center justify-center text-sm text-neutral-500 text-center px-6">
+                    Beeld van de {currentSeqClip.half || 1}e helft is nog niet geüpload.
+                  </div>
+                ) : (
+                  <div className="rounded-xl bg-neutral-950 aspect-video flex items-center justify-center text-sm text-neutral-500">
+                    Geen clips voor deze sequentie.
+                  </div>
+                )}
+
+                {/* Bediening */}
+                <div className="flex items-center gap-3">
+                  <button
+                    onClick={() => playSeqClip(sequencePlaylistIndex - 1)}
+                    disabled={sequencePlaylistIndex === 0}
+                    className="p-2 rounded-xl bg-neutral-800 text-neutral-200 disabled:opacity-40 hover:bg-neutral-700"
+                    title="Vorige"
+                  >
+                    <ChevronLeft size={18} />
+                  </button>
+                  <button
+                    onClick={() => playSeqClip(sequencePlaylistIndex)}
+                    disabled={!currentSeqClip || !seqVideoSrc}
+                    className="w-11 h-11 rounded-full bg-[#FF6124] text-white flex items-center justify-center disabled:opacity-40 hover:opacity-90"
+                    title="Opnieuw afspelen"
+                  >
+                    <RotateCcw size={18} />
+                  </button>
+                  <button
+                    onClick={() => playSeqClip(sequencePlaylistIndex + 1)}
+                    disabled={sequencePlaylistIndex >= sequenceClipsForModal.length - 1}
+                    className="p-2 rounded-xl bg-neutral-800 text-neutral-200 disabled:opacity-40 hover:bg-neutral-700"
+                    title="Volgende"
+                  >
+                    <ChevronRight size={18} />
+                  </button>
+
+                  <label className="ml-auto flex items-center gap-2 text-xs text-neutral-400 cursor-pointer">
+                    Automatisch door
+                    <button
+                      type="button"
+                      onClick={() => setSeqAutoAdvance((v) => !v)}
+                      className={`w-8 h-5 rounded-full transition-colors relative ${
+                        seqAutoAdvance ? "bg-[#FF6124]" : "bg-neutral-700"
+                      }`}
+                    >
+                      <span
+                        className={`absolute top-0.5 w-4 h-4 rounded-full bg-white transition-all ${
+                          seqAutoAdvance ? "left-3.5" : "left-0.5"
+                        }`}
+                      />
+                    </button>
+                  </label>
+                </div>
+
+                {/* Segment-balken per clip */}
+                {sequenceClipsForModal.length > 0 && (
+                  <div className="flex gap-1">
+                    {sequenceClipsForModal.map((c, i) => (
+                      <button
+                        key={c.id || i}
+                        type="button"
+                        onClick={() => playSeqClip(i)}
+                        title={`Clip ${i + 1} · ${fmt(c.time || 0)}`}
+                        className={`h-1.5 flex-1 rounded-full transition-colors ${
+                          i === sequencePlaylistIndex
+                            ? "bg-[#FF6124]"
+                            : i < sequencePlaylistIndex
+                            ? "bg-neutral-400"
+                            : "bg-neutral-700 hover:bg-neutral-600"
+                        }`}
+                      />
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* Cliplijst */}
+              <div className="lg:max-h-[60vh] overflow-y-auto pr-1">
+                <div className="text-[11px] uppercase tracking-wider text-neutral-500 mb-1.5 px-1">
+                  Momenten ({sequenceClipsForModal.length})
+                </div>
+                <div className="divide-y divide-neutral-800/80">
+                  {sequenceClipsForModal.map((c, idx) => {
+                    const p = seqPlayers.find((pl) => pl.id === c.playerId);
+                    const active = idx === sequencePlaylistIndex;
+                    return (
+                      <div
+                        key={c.id || idx}
+                        data-seq-idx={idx}
+                        onClick={() => playSeqClip(idx)}
+                        className={`flex items-center gap-2 px-2 py-1.5 text-xs cursor-pointer border-l-2 transition-colors ${
+                          active
+                            ? "border-[#FF6124] bg-[#FF6124]/10 text-neutral-100"
+                            : "border-transparent text-neutral-300 hover:bg-neutral-800/60"
+                        }`}
+                      >
+                        <span className={`w-4 text-right tabular-nums ${active ? "text-[#FF6124] font-semibold" : "text-neutral-500"}`}>
+                          {idx + 1}
+                        </span>
+                        <span className="flex-1 min-w-0 truncate">
+                          {formatActionLabel(c.actionType)}
+                          <span className="text-neutral-500">
+                            {" · "}
+                            {p ? `${p.number ? `#${p.number} ` : ""}${p.name}` : "Onbekend"}
+                          </span>
+                        </span>
+                        {(c.result === "goal" || c.result === "miss") && (
+                          <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${c.result === "goal" ? "bg-green-500" : "bg-red-500"}`} title={c.result === "goal" ? "Raak" : "Mis"} />
+                        )}
+                        <span className="text-[10px] text-neutral-500 tabular-nums whitespace-nowrap">
+                          {c.half || 1}e · {fmt(c.time || 0)}
+                        </span>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
           </div>
         </div>
       )}

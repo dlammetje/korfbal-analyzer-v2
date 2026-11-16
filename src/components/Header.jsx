@@ -117,9 +117,35 @@ export default function Header() {
             <div className="flex items-center gap-2 sm:gap-4">
               {currentUser ? (
                 <div className="flex items-center gap-2 sm:gap-4">
-                  <span className="hidden sm:inline max-w-48 truncate text-gray-300">
-                    {currentUser.displayName || currentUser.email}
-                  </span>
+                  <NavLink
+                    to="/me"
+                    title="Mijn profiel"
+                    className={({ isActive }) =>
+                      `flex items-center gap-2 rounded-xl px-1.5 py-1.5 transition ${
+                        isActive ? "bg-neutral-800" : "hover:bg-neutral-800"
+                      }`
+                    }
+                  >
+                    {({ isActive }) => (
+                      <>
+                        <span
+                          className={`w-8 h-8 rounded-full bg-[#FF6124]/20 text-[#FF6124] flex items-center justify-center text-xs font-bold shrink-0 ${
+                            isActive ? "ring-2 ring-[#FF6124]" : ""
+                          }`}
+                        >
+                          {(currentUser.displayName || currentUser.email || "?")
+                            .split(/[\s@.]+/)
+                            .filter(Boolean)
+                            .map((p) => p[0]?.toUpperCase())
+                            .slice(0, 2)
+                            .join("")}
+                        </span>
+                        <span className="hidden sm:inline max-w-40 truncate text-gray-300 text-sm">
+                          {currentUser.displayName || currentUser.email}
+                        </span>
+                      </>
+                    )}
+                  </NavLink>
                   <NavLink
                     to="/settings"
                     className={({ isActive }) =>
@@ -188,6 +214,19 @@ export default function Header() {
                     {link.label}
                   </NavLink>
                 ))}
+                <NavLink
+                  to="/me"
+                  onClick={() => setMenuOpen(false)}
+                  className={({ isActive }) =>
+                    `px-4 py-3 rounded-xl text-base font-medium transition ${
+                      isActive
+                        ? "bg-[#FF6124] text-white"
+                        : "text-neutral-200 hover:bg-neutral-800 hover:text-white"
+                    }`
+                  }
+                >
+                  Mijn profiel
+                </NavLink>
               </div>
             </nav>
           )}

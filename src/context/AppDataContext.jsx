@@ -3,6 +3,7 @@ import { v4 as uuidv4 } from "uuid";
 import { db, getFirebase, storage } from "../lib/firebaseClient";
 import { doc, deleteDoc, updateDoc, arrayUnion, getDoc } from "firebase/firestore";
 import { ref, uploadBytesResumable, getDownloadURL } from "firebase/storage";
+import { VIDEO_API_URL, uploadVideoToR2, deleteVideoFromR2 } from "../lib/videoStorage";
 
 const Ctx = createContext(null);
 export function useAppData() {
@@ -23,10 +24,55 @@ async function ensureFirebaseFns() {
   }
 }
 
+// Sla de video-URL op in Firestore en localStorage (gedeeld door Firebase- en R2-upload)
+async function persistVideoUrl(matchId, half, url, r2Key) {
+  // Firestore bijwerken met video-url (+ R2 key voor latere cleanup)
+  try {
+    const matchRef = doc(db, "matches", matchId);
+    const update = { [`videoUrls.${half}`]: url };
+    if (r2Key) update[`videoKeys.${half}`] = r2Key;
+    await updateDoc(matchRef, update);
+    console.log("Firestore bijgewerkt met video URL");
+  } catch (dbError) {
+    console.error("Fout bij updaten Firestore:", dbError);
+    // We gooien de fout niet door, want de upload is gelukt
+  }
+
+  // Opslaan in localStorage als fallback
+  try {
+    const key = LS_KEYS.VIDEOS(matchId);
+    const videos = JSON.parse(localStorage.getItem(key) || "{}");
+    videos[half] = url;
+    localStorage.setItem(key, JSON.stringify(videos));
+  } catch (lsError) {
+    console.error("Fout bij opslaan in localStorage:", lsError);
+  }
+}
+
 async function uploadMatchVideo(matchId, half, file, onProgress) {
   if (!matchId || !half || !file) {
     console.error("Ongeldige parameters voor uploadMatchVideo", { matchId, half, file });
     throw new Error("Ongeldige parameters voor video-upload");
+  }
+
+  // Als de Cloudflare R2 worker geconfigureerd is, gaat de upload daarheen
+  if (VIDEO_API_URL) {
+    // Bewaar de vorige R2 key zodat de oude video opgeruimd kan worden
+    let prevKey = null;
+    try {
+      const snap = await getDoc(doc(db, "matches", matchId));
+      prevKey = snap.exists() ? (snap.data().videoKeys || {})[half] || null : null;
+    } catch (e) {
+      console.warn("Kon vorige video-key niet lezen:", e);
+    }
+
+    const { url, key } = await uploadVideoToR2({ matchId, half, file, onProgress });
+    await persistVideoUrl(matchId, half, url, key);
+
+    if (prevKey && prevKey !== key) {
+      deleteVideoFromR2(prevKey); // best effort, niet op wachten
+    }
+    return url;
   }
 
   // Controleer of Firebase storage beschikbaar is
@@ -59,27 +105,7 @@ async function uploadMatchVideo(matchId, half, file, onProgress) {
             const url = await getDownloadURL(uploadTask.snapshot.ref);
             console.log(`Video succesvol geüpload naar ${url}`);
 
-            // Firestore bijwerken met video-url
-            try {
-              const matchRef = doc(db, "matches", matchId);
-              await updateDoc(matchRef, {
-                [`videoUrls.${half}`]: url,
-              });
-              console.log("Firestore bijgewerkt met video URL");
-            } catch (dbError) {
-              console.error("Fout bij updaten Firestore:", dbError);
-              // We gooien de fout niet door, want de upload is gelukt
-            }
-
-            // Opslaan in localStorage als fallback
-            try {
-              const key = LS_KEYS.VIDEOS(matchId);
-              const videos = JSON.parse(localStorage.getItem(key) || "{}");
-              videos[half] = url;
-              localStorage.setItem(key, JSON.stringify(videos));
-            } catch (lsError) {
-              console.error("Fout bij opslaan in localStorage:", lsError);
-            }
+            await persistVideoUrl(matchId, half, url);
 
             resolve(url);
           } catch (error) {

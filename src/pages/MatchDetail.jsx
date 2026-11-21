@@ -1082,6 +1082,19 @@ export default function MatchDetail() {
                         const file = e.target.files?.[0];
                         if (!file) return;
 
+                        // Waarschuwing bij zeer grote bestanden (>2 GB)
+                        if (file.size > 2 * 1024 ** 3) {
+                          const gb = (file.size / 1024 ** 3).toFixed(1);
+                          const ok = window.confirm(
+                            `Dit bestand is ${gb} GB. Dat is erg groot en maakt kijken duur en traag. ` +
+                              `Verklein het eerst met HandBrake (preset "Fast 1080p30"), dan wordt het ongeveer 1 GB per helft.\n\nToch uploaden?`
+                          );
+                          if (!ok) {
+                            e.target.value = "";
+                            return;
+                          }
+                        }
+
                         try {
                           console.log("UPLOAD START →", match.id, "half1", file);
                           const url = await startMatchVideoUpload(match.id, "half1", file);
@@ -1144,6 +1157,19 @@ export default function MatchDetail() {
                       onChange={async (e) => {
                         const file = e.target.files?.[0];
                         if (!file) return;
+
+                        // Waarschuwing bij zeer grote bestanden (>2 GB)
+                        if (file.size > 2 * 1024 ** 3) {
+                          const gb = (file.size / 1024 ** 3).toFixed(1);
+                          const ok = window.confirm(
+                            `Dit bestand is ${gb} GB. Dat is erg groot en maakt kijken duur en traag. ` +
+                              `Verklein het eerst met HandBrake (preset "Fast 1080p30"), dan wordt het ongeveer 1 GB per helft.\n\nToch uploaden?`
+                          );
+                          if (!ok) {
+                            e.target.value = "";
+                            return;
+                          }
+                        }
 
                         try {
                           console.log("UPLOAD START →", match.id, "half2", file);

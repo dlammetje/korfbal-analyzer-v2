@@ -1,0 +1,10 @@
+name = "korfbal-video"
+main = "src/index.js"
+compatibility_date = "2025-12-01"
+
+[[r2_buckets]]
+binding = "BUCKET"
+bucket_name = "korfbal-videos"
+
+[vars]
+FIREBASE_PROJECT_ID = "korfbal-analyzer"
